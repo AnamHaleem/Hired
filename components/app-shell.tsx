@@ -32,6 +32,9 @@ export function AppShell({
           <Link className="nav-link" href="/">
             Dashboard
           </Link>
+          <Link className="nav-link" href="/vault">
+            Vault
+          </Link>
           <Link className="nav-link" href="/jobs/new">
             New Job
           </Link>

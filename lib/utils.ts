@@ -1,4 +1,4 @@
-import type { CareerLane, JobLevel, JobStatus } from "@/lib/schemas";
+import type { CareerLane, JobLevel, JobStatus, ScoreVerdict } from "@/lib/schemas";
 
 export type Tone = "neutral" | "success" | "warning" | "info" | "accent";
 
@@ -23,6 +23,12 @@ const statusTones: Record<JobStatus, Tone> = {
   discarded: "neutral",
 };
 
+const verdictTones: Record<ScoreVerdict, Tone> = {
+  pursue: "success",
+  maybe: "warning",
+  pass: "neutral",
+};
+
 export function getLaneLabel(lane: CareerLane) {
   return laneLabels[lane];
 }
@@ -33,6 +39,10 @@ export function getLevelLabel(level: JobLevel) {
 
 export function getStatusTone(status: JobStatus) {
   return statusTones[status];
+}
+
+export function getVerdictTone(verdict: ScoreVerdict) {
+  return verdictTones[verdict];
 }
 
 export function formatDate(value: string) {

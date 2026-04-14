@@ -77,11 +77,11 @@ export default function SettingsPage() {
             </div>
 
             <div className="empty-state">
-              <h3>Parser</h3>
+              <h3>Parser and scorer</h3>
               <p>
                 {runtimeFlags.hasOpenAI
-                  ? "OpenAI parsing is enabled. The API route will prefer the Responses API with a typed schema."
-                  : "OpenAI is not configured yet, so the parser route falls back to a conservative heuristic parser for local progress."}
+                  ? "OpenAI is enabled. Parser and fit scoring routes will prefer the Responses API with typed schemas."
+                  : "OpenAI is not configured yet, so parser and scoring routes fall back to conservative local heuristics for development progress."}
               </p>
             </div>
 
@@ -89,8 +89,8 @@ export default function SettingsPage() {
               <h3>Persistence</h3>
               <p>
                 {runtimeFlags.hasDatabase
-                  ? "Railway Postgres is configured. Parsed jobs will persist to the PostgreSQL tables managed by the migration scripts in this repo."
-                  : "DATABASE_URL is missing, so parsed jobs are stored in a local development file under .data/ for now."}
+                  ? "Railway Postgres is configured. Jobs, analyses, profiles, and achievement vault records will persist to the PostgreSQL tables managed by the migration scripts in this repo."
+                  : "DATABASE_URL is missing, so jobs and the vault are stored in local development files under .data/ for now."}
               </p>
             </div>
 

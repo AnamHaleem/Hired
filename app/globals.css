@@ -48,7 +48,8 @@ a {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -449,7 +450,8 @@ textarea {
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   border: 1px solid rgba(74, 52, 38, 0.14);
   border-radius: 18px;
@@ -462,7 +464,8 @@ textarea {
 }
 
 .field input:focus,
-.field textarea:focus {
+.field textarea:focus,
+.field select:focus {
   outline: none;
   border-color: rgba(154, 74, 47, 0.42);
   box-shadow: 0 0 0 4px rgba(154, 74, 47, 0.1);
@@ -522,6 +525,46 @@ textarea {
   gap: 10px;
 }
 
+.entry-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(74, 52, 38, 0.1);
+  border-radius: 20px;
+  background: rgba(255, 252, 247, 0.72);
+}
+
+.entry-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.entry-copy {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.65;
+}
+
+.score-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.score-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100%;
+  padding: 16px;
+  border: 1px solid rgba(74, 52, 38, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 252, 247, 0.64);
+}
+
 .error-text {
   color: #8d1f27;
   font-weight: 600;
@@ -531,13 +574,15 @@ textarea {
   .hero,
   .grid-two,
   .grid-four,
-  .field-grid {
+  .field-grid,
+  .score-grid {
     grid-template-columns: 1fr;
   }
 
   .shell-nav,
   .card-header,
-  .list-row {
+  .list-row,
+  .entry-header {
     align-items: flex-start;
     flex-direction: column;
   }

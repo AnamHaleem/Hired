@@ -3,11 +3,16 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 import {
+  type AnalysisProvider,
   type JobAnalysis,
   JobAnalysisSchema,
   type JobParserResult,
+  type JobScoreResult,
   type ParserProvider,
+  type RetrievedAchievement,
+  RetrievedAchievementSchema,
   type StoredJob,
+  type StoredResume,
   StoredJobSchema,
 } from "@/lib/schemas";
 import {
@@ -37,7 +42,7 @@ type DatabaseJobRow = {
   description: string;
   lane: string | null;
   level: string | null;
-  fit_score: number | null;
+  fit_score: number | string | null;
   status: string | null;
   parser_provider: string | null;
   created_at: Date | string;
@@ -53,16 +58,28 @@ type DatabaseAnalysisRow = {
   fit_signal_keywords: unknown;
   verdict?: unknown;
   best_angle?: unknown;
+  top_proof_points?: unknown;
   gaps?: unknown;
   hidden_objections?: unknown;
+  resume_id?: unknown;
+  resume_name?: unknown;
+  resume_highlights?: unknown;
+  retrieved_achievements?: unknown;
+  scoring_provider?: unknown;
+  scoring_model?: unknown;
 };
 
 type JobWithAnalysisRow = DatabaseJobRow &
   Partial<DatabaseAnalysisRow> & {
     best_angle: string | null;
     verdict: string | null;
+    scoring_model: string | null;
     gaps: unknown;
     hidden_objections: unknown;
+    resume_name: string | null;
+    top_proof_points: unknown;
+    resume_highlights: unknown;
+    retrieved_achievements: unknown;
   };
 
 const EMPTY_STORE: JobStore = {
@@ -85,6 +102,30 @@ function toStringList(value: unknown) {
   return value.filter((item): item is string => typeof item === "string");
 }
 
+function toNullableNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function toRetrievedAchievements(value: unknown): RetrievedAchievement[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    const parsed = RetrievedAchievementSchema.safeParse(item);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
 function mapAnalysis(row?: DatabaseAnalysisRow): JobAnalysis {
   return JobAnalysisSchema.parse({
     mustHaves: toStringList(row?.must_haves),
@@ -97,8 +138,18 @@ function mapAnalysis(row?: DatabaseAnalysisRow): JobAnalysis {
         ? row.verdict
         : null,
     bestAngle: typeof row?.best_angle === "string" ? row.best_angle : null,
+    topProofPoints: toStringList(row?.top_proof_points),
     gaps: toStringList(row?.gaps),
     hiddenObjections: toStringList(row?.hidden_objections),
+    resumeId: typeof row?.resume_id === "string" ? row.resume_id : null,
+    resumeName: typeof row?.resume_name === "string" ? row.resume_name : null,
+    resumeHighlights: toStringList(row?.resume_highlights),
+    retrievedAchievements: toRetrievedAchievements(row?.retrieved_achievements),
+    scoringProvider:
+      row?.scoring_provider === "openai" || row?.scoring_provider === "heuristic"
+        ? row.scoring_provider
+        : null,
+    scoringModel: typeof row?.scoring_model === "string" ? row.scoring_model : null,
   });
 }
 
@@ -116,8 +167,15 @@ function extractAnalysisRow(row: JobWithAnalysisRow): DatabaseAnalysisRow | unde
     fit_signal_keywords: row.fit_signal_keywords,
     verdict: row.verdict,
     best_angle: row.best_angle,
+    top_proof_points: row.top_proof_points,
     gaps: row.gaps,
     hidden_objections: row.hidden_objections,
+    resume_id: row.resume_id,
+    resume_name: row.resume_name,
+    resume_highlights: row.resume_highlights,
+    retrieved_achievements: row.retrieved_achievements,
+    scoring_provider: row.scoring_provider,
+    scoring_model: row.scoring_model,
   };
 }
 
@@ -146,7 +204,7 @@ function mapDatabaseJob(
       job.level === "unknown"
         ? job.level
         : "unknown",
-    fitScore: job.fit_score,
+    fitScore: toNullableNumber(job.fit_score),
     status:
       job.status === "new" || job.status === "approved" || job.status === "discarded"
         ? job.status
@@ -183,8 +241,15 @@ function buildStoredJob(args: CreateParsedJobArgs): StoredJob {
       fitSignalKeywords: args.parsed.fitSignalKeywords,
       verdict: null,
       bestAngle: null,
+      topProofPoints: [],
       gaps: [],
       hiddenObjections: [],
+      resumeId: null,
+      resumeName: null,
+      resumeHighlights: [],
+      retrievedAchievements: [],
+      scoringProvider: null,
+      scoringModel: null,
     },
     createdAt: now,
     updatedAt: now,
@@ -257,6 +322,46 @@ async function approveJobLocal(jobId: string) {
   return updated;
 }
 
+async function saveJobScoreLocal(
+  jobId: string,
+  result: JobScoreResult,
+  provider: AnalysisProvider,
+  model: string | null,
+  resume: StoredResume | null,
+) {
+  const store = await readLocalStore();
+  const index = store.jobs.findIndex((job) => job.id === jobId);
+
+  if (index === -1) {
+    return null;
+  }
+
+  const current = store.jobs[index];
+  const updated = StoredJobSchema.parse({
+    ...current,
+    fitScore: result.score,
+    analysis: {
+      ...current.analysis,
+      verdict: result.verdict,
+      bestAngle: result.bestAngle,
+      topProofPoints: result.topProofPoints,
+      gaps: result.gaps,
+      hiddenObjections: result.hiddenObjections,
+      resumeId: resume?.id ?? null,
+      resumeName: resume?.label ?? null,
+      resumeHighlights: result.resumeHighlights,
+      retrievedAchievements: result.retrievedAchievements,
+      scoringProvider: provider,
+      scoringModel: model,
+    },
+    updatedAt: new Date().toISOString(),
+  });
+
+  store.jobs[index] = updated;
+  await writeLocalStore(store);
+  return updated;
+}
+
 async function createParsedJobDatabase(args: CreateParsedJobArgs) {
   const pool = getDatabasePool();
   const client = await pool.connect();
@@ -322,8 +427,15 @@ async function createParsedJobDatabase(args: CreateParsedJobArgs) {
           fit_signal_keywords,
           verdict,
           best_angle,
+          top_proof_points,
           gaps,
-          hidden_objections
+          hidden_objections,
+          resume_id,
+          resume_name,
+          resume_highlights,
+          retrieved_achievements,
+          scoring_provider,
+          scoring_model
       `,
       [
         jobResult.rows[0].id,
@@ -370,8 +482,15 @@ async function listJobsDatabase() {
       a.fit_signal_keywords,
       a.verdict,
       a.best_angle,
+      a.top_proof_points,
       a.gaps,
-      a.hidden_objections
+      a.hidden_objections,
+      a.resume_id,
+      a.resume_name,
+      a.resume_highlights,
+      a.retrieved_achievements,
+      a.scoring_provider,
+      a.scoring_model
     from jobs j
     left join lateral (
       select
@@ -383,8 +502,15 @@ async function listJobsDatabase() {
         fit_signal_keywords,
         verdict,
         best_angle,
+        top_proof_points,
         gaps,
-        hidden_objections
+        hidden_objections,
+        resume_id,
+        resume_name,
+        resume_highlights,
+        retrieved_achievements,
+        scoring_provider,
+        scoring_model
       from job_analyses
       where job_id = j.id
       order by created_at desc
@@ -421,8 +547,15 @@ async function getJobByIdDatabase(jobId: string) {
         a.fit_signal_keywords,
         a.verdict,
         a.best_angle,
+        a.top_proof_points,
         a.gaps,
-        a.hidden_objections
+        a.hidden_objections,
+        a.resume_id,
+        a.resume_name,
+        a.resume_highlights,
+        a.retrieved_achievements,
+        a.scoring_provider,
+        a.scoring_model
       from jobs j
       left join lateral (
         select
@@ -434,8 +567,15 @@ async function getJobByIdDatabase(jobId: string) {
           fit_signal_keywords,
           verdict,
           best_angle,
+          top_proof_points,
           gaps,
-          hidden_objections
+          hidden_objections,
+          resume_id,
+          resume_name,
+          resume_highlights,
+          retrieved_achievements,
+          scoring_provider,
+          scoring_model
         from job_analyses
         where job_id = j.id
         order by created_at desc
@@ -470,6 +610,100 @@ async function approveJobDatabase(jobId: string) {
   return getJobByIdDatabase(jobId);
 }
 
+async function saveJobScoreDatabase(
+  jobId: string,
+  result: JobScoreResult,
+  provider: AnalysisProvider,
+  model: string | null,
+  resume: StoredResume | null,
+) {
+  const pool = getDatabasePool();
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+
+    await client.query(
+      `
+        update jobs
+        set fit_score = $2,
+            updated_at = now()
+        where id = $1
+      `,
+      [jobId, result.score],
+    );
+
+    await client.query(
+      `
+        insert into job_analyses (
+          job_id,
+          must_haves,
+          nice_to_haves,
+          pain_points,
+          likely_objections,
+          fit_signal_keywords,
+          verdict,
+          best_angle,
+          top_proof_points,
+          gaps,
+          hidden_objections,
+          resume_id,
+          resume_name,
+          resume_highlights,
+          retrieved_achievements,
+          scoring_provider,
+          scoring_model
+        )
+        select
+          job_id,
+          must_haves,
+          nice_to_haves,
+          pain_points,
+          likely_objections,
+          fit_signal_keywords,
+          $2,
+          $3,
+          $4::jsonb,
+          $5::jsonb,
+          $6::jsonb,
+          $7,
+          $8,
+          $9::jsonb,
+          $10::jsonb,
+          $11,
+          $12
+        from job_analyses
+        where job_id = $1
+        order by created_at desc
+        limit 1
+      `,
+      [
+        jobId,
+        result.verdict,
+        result.bestAngle,
+        JSON.stringify(result.topProofPoints),
+        JSON.stringify(result.gaps),
+        JSON.stringify(result.hiddenObjections),
+        resume?.id ?? null,
+        resume?.label ?? null,
+        JSON.stringify(result.resumeHighlights),
+        JSON.stringify(result.retrievedAchievements),
+        provider,
+        model,
+      ],
+    );
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return getJobByIdDatabase(jobId);
+}
+
 export async function createParsedJob(args: CreateParsedJobArgs) {
   if (isDatabaseConfigured()) {
     return createParsedJobDatabase(args);
@@ -500,4 +734,18 @@ export async function approveJob(jobId: string) {
   }
 
   return approveJobLocal(jobId);
+}
+
+export async function saveJobScore(
+  jobId: string,
+  result: JobScoreResult,
+  provider: AnalysisProvider,
+  model: string | null,
+  resume: StoredResume | null,
+) {
+  if (isDatabaseConfigured()) {
+    return saveJobScoreDatabase(jobId, result, provider, model, resume);
+  }
+
+  return saveJobScoreLocal(jobId, result, provider, model, resume);
 }

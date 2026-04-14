@@ -11,13 +11,17 @@ Hired is an AI-assisted, human-reviewed job search operating system for structur
 
 ## Current implementation
 
-The app currently covers the Phase 1 foundation:
+The app now covers the Phase 1 foundation plus the core of Phase 2:
 
-- dashboard
+- dashboard with intake and scoring visibility
 - new job intake
 - parser API route
+- achievement vault with single-user profile context
+- fit scoring API route with retrieval-first evidence ranking
+- job detail screen showing verdict, angle, proof points, gaps, and objections
 - manual approval gate
 - local fallback persistence when `DATABASE_URL` is missing
+- PostgreSQL schema for jobs, analyses, profiles, lanes, achievements, applications, assets, contacts, interactions, and weekly insights
 
 ## Required environment variables
 
@@ -41,6 +45,8 @@ If you have a Railway Postgres database available locally or remotely, run:
 npm run db:migrate
 ```
 
+The current migrations are compatible with standard Railway PostgreSQL. Vector search is being deferred to a later migration so the default Railway Postgres template can be used without a pgvector-specific image.
+
 ## GitHub + Vercel + Railway flow
 
 1. Push this repository to GitHub.
@@ -50,6 +56,14 @@ npm run db:migrate
 5. Add `OPENAI_API_KEY`, `DATABASE_URL`, `APP_URL`, and optionally `OPENAI_PARSER_MODEL` in Vercel.
 6. Run the SQL migrations against Railway Postgres with `npm run db:migrate`.
 7. Push to GitHub and let Vercel create preview and production deployments from the connected repo.
+
+## Core routes
+
+- `/` dashboard
+- `/jobs/new` job intake
+- `/jobs/[id]` parsed review + fit scoring
+- `/vault` profile and achievement management
+- `/settings` runtime and environment view
 
 ## CI
 

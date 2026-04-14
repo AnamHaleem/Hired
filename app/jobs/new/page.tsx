@@ -9,7 +9,7 @@ export default function NewJobPage() {
     <AppShell
       eyebrow="Flow 1"
       title="New Job Intake"
-      description="Paste a full job description and Hired will convert it into structured metadata, route the professional lane, and save the intake for human review."
+      description="Paste a full job description and Hired will convert it into structured metadata, route the professional lane, save the intake, and open the review screen where you can run grounded fit scoring."
       actions={
         <Link className="button button-secondary" href="/">
           Back to Dashboard
@@ -47,10 +47,11 @@ export default function NewJobPage() {
             </div>
 
             <div className="empty-state">
-              <h3>3. Manual approval gate</h3>
+              <h3>3. Score, then approve</h3>
               <p>
-                No asset generation happens until a job is explicitly approved. That keeps the
-                product aligned with the non-autonomous safety stance from the handoff docs.
+                From the job detail screen you can run retrieval-first fit scoring, inspect the
+                proof points it used, and then decide whether the job deserves approval for later
+                asset generation.
               </p>
             </div>
           </div>
