@@ -3,6 +3,11 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import {
+  SUPPORTED_RESUME_ACCEPT,
+  SUPPORTED_RESUME_FORMATS_LABEL,
+} from "@/lib/resume-formats";
+
 type ResumeResponse = {
   resume?: {
     id: string;
@@ -78,12 +83,12 @@ export function ResumeUploadForm() {
           <input
             ref={fileInputRef}
             id="resume-file"
-            accept=".pdf,.docx,.txt,.md,.rtf"
+            accept={SUPPORTED_RESUME_ACCEPT}
             type="file"
           />
           <p className="field-hint">
-            PDF, DOCX, TXT, MD, and RTF are supported. New uploads become the active scoring
-            resume automatically.
+            {SUPPORTED_RESUME_FORMATS_LABEL} files are supported. New uploads become the active
+            scoring resume automatically.
           </p>
         </div>
       </div>

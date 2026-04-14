@@ -4,6 +4,11 @@ import { NextResponse } from "next/server";
 
 import { parseUploadedResume } from "@/lib/ai/resume-parser";
 import { createParsedResume } from "@/lib/persistence/resume-store";
+import {
+  getResumeMimeType,
+  isSupportedResumeFile,
+  SUPPORTED_RESUME_FORMATS_LABEL,
+} from "@/lib/resume-formats";
 
 export const runtime = "nodejs";
 
@@ -35,6 +40,15 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!isSupportedResumeFile(file)) {
+      return NextResponse.json(
+        {
+          error: `Unsupported resume format. Upload a ${SUPPORTED_RESUME_FORMATS_LABEL} file.`,
+        },
+        { status: 400 },
+      );
+    }
+
     const parsedResume = await parseUploadedResume(file);
     const resume = await createParsedResume({
       label:
@@ -42,7 +56,7 @@ export async function POST(request: Request) {
           ? label.trim()
           : deriveLabel(file.name) || "Resume version",
       originalFilename: file.name,
-      mimeType: file.type || "application/octet-stream",
+      mimeType: getResumeMimeType(file),
       rawText: parsedResume.rawText,
       parsed: parsedResume.parsed,
       makeActive: true,

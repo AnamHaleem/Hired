@@ -1,9 +1,14 @@
+import { createRequire } from "node:module";
 import path from "node:path";
 
 import { zodTextFormat } from "openai/helpers/zod";
 
 import { env } from "@/lib/config";
 import { getOpenAIClient } from "@/lib/openai";
+import {
+  getSupportedResumeExtension,
+  SUPPORTED_RESUME_FORMATS_LABEL,
+} from "@/lib/resume-formats";
 import {
   type AnalysisProvider,
   type CareerLane,
@@ -82,6 +87,46 @@ const COMMON_FOCUS_AREAS = [
   "Partnership Ecosystems",
   "Enterprise Marketing",
 ];
+
+const WINDOWS_1252_DECODER = new TextDecoder("windows-1252");
+const RTF_DESTINATION_CONTROL_WORDS = new Set([
+  "fonttbl",
+  "colortbl",
+  "stylesheet",
+  "info",
+  "pict",
+  "object",
+  "themedata",
+  "datastore",
+  "xmlopen",
+  "annotation",
+  "header",
+  "headerl",
+  "headerr",
+  "footer",
+  "footerl",
+  "footerr",
+  "shppict",
+  "nonshppict",
+  "fldinst",
+]);
+const runtimeRequire = createRequire(path.join(process.cwd(), "package.json"));
+const canvasPackageName = ["@napi-rs", "canvas"].join("/");
+
+type PdfParseModule = {
+  PDFParse: new (options: { data: Buffer | Uint8Array }) => {
+    destroy(): Promise<void>;
+    getText(): Promise<{
+      text: string;
+    }>;
+  };
+};
+
+type CanvasModule = {
+  DOMMatrix?: typeof DOMMatrix;
+  ImageData?: typeof ImageData;
+  Path2D?: typeof Path2D;
+};
 
 function normalizeText(value: string) {
   return value.replace(/\u0000/g, "").replace(/\r/g, "").trim();
@@ -207,48 +252,285 @@ function heuristicParseResume(text: string): ResumeParserResult {
 }
 
 function inferMimeType(file: File) {
-  if (file.type) {
-    return file.type;
-  }
-
-  const extension = path.extname(file.name).toLowerCase();
+  const extension = getSupportedResumeExtension(file);
 
   if (extension === ".pdf") {
     return "application/pdf";
+  }
+
+  if (extension === ".doc") {
+    return "application/msword";
   }
 
   if (extension === ".docx") {
     return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   }
 
-  return "text/plain";
+  if (extension === ".rtf") {
+    return "application/rtf";
+  }
+
+  return "application/octet-stream";
 }
 
-async function extractTextFromFile(file: File) {
-  const mimeType = inferMimeType(file);
-  const buffer = Buffer.from(await file.arrayBuffer());
+function decodeRtfUnicode(value: number) {
+  const normalized = value < 0 ? value + 65536 : value;
+  return String.fromCharCode(normalized);
+}
 
-  if (mimeType === "application/pdf") {
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: buffer });
+function ensurePdfRuntimeGlobals() {
+  const canvas = runtimeRequire(canvasPackageName) as CanvasModule;
 
-    try {
-      const parsed = await parser.getText();
-      return normalizeText(parsed.text);
-    } finally {
-      await parser.destroy();
+  if (!globalThis.DOMMatrix && canvas.DOMMatrix) {
+    globalThis.DOMMatrix = canvas.DOMMatrix;
+  }
+
+  if (!globalThis.ImageData && canvas.ImageData) {
+    globalThis.ImageData = canvas.ImageData;
+  }
+
+  if (!globalThis.Path2D && canvas.Path2D) {
+    globalThis.Path2D = canvas.Path2D;
+  }
+}
+
+function extractTextFromRtfDocument(source: string) {
+  const output: string[] = [];
+  const skipStack: boolean[] = [];
+  let skipGroup = false;
+  let unicodeFallbackCharsToSkip = 0;
+  let unicodeSkipCount = 1;
+  let index = 0;
+
+  while (index < source.length) {
+    const current = source[index];
+
+    if (unicodeFallbackCharsToSkip > 0) {
+      if (current === "\\" && source[index + 1] === "'") {
+        index += 4;
+      } else {
+        index += 1;
+      }
+
+      unicodeFallbackCharsToSkip -= 1;
+      continue;
+    }
+
+    if (current === "{") {
+      skipStack.push(skipGroup);
+      index += 1;
+      continue;
+    }
+
+    if (current === "}") {
+      skipGroup = skipStack.pop() ?? false;
+      index += 1;
+      continue;
+    }
+
+    if (current !== "\\") {
+      if (!skipGroup) {
+        output.push(current);
+      }
+
+      index += 1;
+      continue;
+    }
+
+    const next = source[index + 1];
+
+    if (!next) {
+      index += 1;
+      continue;
+    }
+
+    if (next === "\\" || next === "{" || next === "}") {
+      if (!skipGroup) {
+        output.push(next);
+      }
+
+      index += 2;
+      continue;
+    }
+
+    if (next === "'") {
+      const hex = source.slice(index + 2, index + 4);
+
+      if (!skipGroup && /^[\da-fA-F]{2}$/.test(hex)) {
+        output.push(WINDOWS_1252_DECODER.decode(Buffer.from(hex, "hex")));
+      }
+
+      index += 4;
+      continue;
+    }
+
+    if (next === "~") {
+      if (!skipGroup) {
+        output.push(" ");
+      }
+
+      index += 2;
+      continue;
+    }
+
+    if (next === "_" || next === "-") {
+      if (!skipGroup) {
+        output.push("-");
+      }
+
+      index += 2;
+      continue;
+    }
+
+    if (next === "*") {
+      skipGroup = true;
+      index += 2;
+      continue;
+    }
+
+    if (!/[A-Za-z]/.test(next)) {
+      index += 2;
+      continue;
+    }
+
+    let cursor = index + 1;
+
+    while (/[A-Za-z]/.test(source[cursor] ?? "")) {
+      cursor += 1;
+    }
+
+    const word = source.slice(index + 1, cursor).toLowerCase();
+    let value: number | null = null;
+
+    if (source[cursor] === "-" || /\d/.test(source[cursor] ?? "")) {
+      const valueStart = cursor;
+      cursor += source[cursor] === "-" ? 1 : 0;
+
+      while (/\d/.test(source[cursor] ?? "")) {
+        cursor += 1;
+      }
+
+      value = Number(source.slice(valueStart, cursor));
+    }
+
+    if (source[cursor] === " ") {
+      cursor += 1;
+    }
+
+    index = cursor;
+
+    if (RTF_DESTINATION_CONTROL_WORDS.has(word)) {
+      skipGroup = true;
+      continue;
+    }
+
+    if (skipGroup) {
+      continue;
+    }
+
+    switch (word) {
+      case "par":
+      case "pard":
+      case "line":
+        output.push("\n");
+        break;
+      case "tab":
+        output.push("\t");
+        break;
+      case "emdash":
+        output.push("--");
+        break;
+      case "endash":
+        output.push("-");
+        break;
+      case "bullet":
+        output.push("* ");
+        break;
+      case "lquote":
+      case "rquote":
+        output.push("'");
+        break;
+      case "ldblquote":
+      case "rdblquote":
+        output.push("\"");
+        break;
+      case "uc":
+        if (typeof value === "number" && value >= 0) {
+          unicodeSkipCount = value;
+        }
+        break;
+      case "u":
+        if (typeof value === "number") {
+          output.push(decodeRtfUnicode(value));
+          unicodeFallbackCharsToSkip = unicodeSkipCount;
+        }
+        break;
+      default:
+        break;
     }
   }
 
-  if (
-    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-  ) {
-    const mammoth = await import("mammoth");
-    const result = await mammoth.extractRawText({ buffer });
-    return normalizeText(result.value);
+  return normalizeText(output.join(""));
+}
+
+async function extractTextFromFile(file: File) {
+  const extension = getSupportedResumeExtension(file);
+
+  if (!extension) {
+    throw new Error(
+      `Unsupported resume format. Upload a ${SUPPORTED_RESUME_FORMATS_LABEL} file.`,
+    );
   }
 
-  return normalizeText(buffer.toString("utf8"));
+  const mimeType = inferMimeType(file);
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  try {
+    if (mimeType === "application/pdf") {
+      ensurePdfRuntimeGlobals();
+      const { PDFParse } = runtimeRequire("pdf-parse") as PdfParseModule;
+      const parser = new PDFParse({ data: buffer });
+
+      try {
+        const parsed = await parser.getText();
+        return normalizeText(parsed.text);
+      } finally {
+        await parser.destroy();
+      }
+    }
+
+    if (mimeType === "application/msword") {
+      const WordExtractor = (await import("word-extractor")).default;
+      const extractor = new WordExtractor();
+      const document = await extractor.extract(buffer);
+      return normalizeText(document.getBody());
+    }
+
+    if (
+      mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ) {
+      const mammoth = await import("mammoth");
+      const result = await mammoth.extractRawText({ buffer });
+      return normalizeText(result.value);
+    }
+
+    if (mimeType === "application/rtf") {
+      return extractTextFromRtfDocument(
+        buffer.toString("utf8").replace(/^\ufeff/, ""),
+      );
+    }
+  } catch (error) {
+    console.error("Resume text extraction failed.", error);
+    const format = path.extname(file.name).toUpperCase().replace(".", "") || "resume";
+
+    throw new Error(
+      `We couldn't read that ${format} file. Upload a text-based ${SUPPORTED_RESUME_FORMATS_LABEL} resume.`,
+    );
+  }
+
+  throw new Error(
+    `Unsupported resume format. Upload a ${SUPPORTED_RESUME_FORMATS_LABEL} file.`,
+  );
 }
 
 export async function parseUploadedResume(file: File): Promise<{
