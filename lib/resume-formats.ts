@@ -10,6 +10,8 @@ export type SupportedResumeExtension =
 
 export const SUPPORTED_RESUME_ACCEPT = SUPPORTED_RESUME_FILE_EXTENSIONS.join(",");
 export const SUPPORTED_RESUME_FORMATS_LABEL = "DOC, DOCX, RTF, and PDF";
+export const MAX_RESUME_UPLOAD_BYTES = 4 * 1024 * 1024;
+export const MAX_RESUME_UPLOAD_LABEL = "4 MB";
 
 const MIME_TYPE_BY_EXTENSION: Record<SupportedResumeExtension, string> = {
   ".doc": "application/msword",

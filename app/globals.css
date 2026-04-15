@@ -570,6 +570,11 @@ select {
   font-weight: 600;
 }
 
+.success-text {
+  color: #245a33;
+  font-weight: 600;
+}
+
 @media (max-width: 960px) {
   .hero,
   .grid-two,

@@ -7,6 +7,8 @@ import { createParsedResume } from "@/lib/persistence/resume-store";
 import {
   getResumeMimeType,
   isSupportedResumeFile,
+  MAX_RESUME_UPLOAD_BYTES,
+  MAX_RESUME_UPLOAD_LABEL,
   SUPPORTED_RESUME_FORMATS_LABEL,
 } from "@/lib/resume-formats";
 
@@ -35,6 +37,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "The selected file is empty.",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (file.size > MAX_RESUME_UPLOAD_BYTES) {
+      return NextResponse.json(
+        {
+          error: `That resume is too large to upload here. Keep it under ${MAX_RESUME_UPLOAD_LABEL}.`,
         },
         { status: 400 },
       );

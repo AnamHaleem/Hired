@@ -128,6 +128,22 @@ type CanvasModule = {
   Path2D?: typeof Path2D;
 };
 
+type ExtractedResumeText = {
+  strategy: "pdf-parse" | "word-extractor" | "mammoth" | "docx-xml-fallback" | "rtf-parser";
+  text: string;
+};
+
+type ReadableTextStats = {
+  alphaCount: number;
+  characterCount: number;
+  lineCount: number;
+  wordCount: number;
+};
+
+const MIN_RESUME_ALPHA_COUNT = 12;
+const MIN_RESUME_CHARACTER_COUNT = 20;
+const MIN_RESUME_WORD_COUNT = 3;
+
 function getUnreadableResumeMessage(file: File) {
   const extension = getSupportedResumeExtension(file);
   const format = path.extname(file.name).toUpperCase().replace(".", "") || "resume";
@@ -153,6 +169,15 @@ function normalizeText(value: string) {
   return value.replace(/\u0000/g, "").replace(/\r/g, "").trim();
 }
 
+function decodeXmlEntities(value: string) {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'");
+}
+
 function splitLines(value: string) {
   return normalizeText(value)
     .split("\n")
@@ -166,6 +191,27 @@ function cleanupBullet(value: string) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 220);
+}
+
+function getReadableTextStats(text: string): ReadableTextStats {
+  const normalized = normalizeText(text);
+
+  return {
+    alphaCount: (normalized.match(/[A-Za-z]/g) ?? []).length,
+    characterCount: normalized.length,
+    lineCount: splitLines(normalized).length,
+    wordCount: (normalized.match(/[A-Za-z0-9][A-Za-z0-9'&/+.-]*/g) ?? []).length,
+  };
+}
+
+function hasEnoughReadableText(text: string) {
+  const stats = getReadableTextStats(text);
+
+  return (
+    stats.characterCount >= MIN_RESUME_CHARACTER_COUNT &&
+    stats.alphaCount >= MIN_RESUME_ALPHA_COUNT &&
+    stats.wordCount >= MIN_RESUME_WORD_COUNT
+  );
 }
 
 function detectLane(text: string): CareerLane | null {
@@ -494,7 +540,36 @@ function extractTextFromRtfDocument(source: string) {
   return normalizeText(output.join(""));
 }
 
-async function extractTextFromFile(file: File) {
+function extractTextFromDocxXmlDocument(xml: string) {
+  const text = decodeXmlEntities(xml)
+    .replace(/<w:tab\/>/g, "\t")
+    .replace(/<w:(?:br|cr)\/>/g, "\n")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<\/w:tr>/g, "\n")
+    .replace(/<[^>]+>/g, " ");
+
+  return normalizeText(text);
+}
+
+async function extractTextFromDocxArchive(buffer: Buffer) {
+  const JSZip = (await import("jszip")).default;
+  const archive = await JSZip.loadAsync(buffer);
+  const xmlEntryNames = Object.keys(archive.files).filter((name) =>
+    /^word\/(document|header\d+|footer\d+|footnotes|endnotes)\.xml$/i.test(name),
+  );
+
+  if (xmlEntryNames.length === 0) {
+    return "";
+  }
+
+  const xmlParts = await Promise.all(
+    xmlEntryNames.map(async (name) => archive.files[name]?.async("string") ?? ""),
+  );
+
+  return extractTextFromDocxXmlDocument(xmlParts.join("\n"));
+}
+
+async function extractTextFromFile(file: File): Promise<ExtractedResumeText> {
   const extension = getSupportedResumeExtension(file);
 
   if (!extension) {
@@ -514,7 +589,10 @@ async function extractTextFromFile(file: File) {
 
       try {
         const parsed = await parser.getText();
-        return normalizeText(parsed.text);
+        return {
+          strategy: "pdf-parse",
+          text: normalizeText(parsed.text),
+        };
       } finally {
         await parser.destroy();
       }
@@ -524,7 +602,10 @@ async function extractTextFromFile(file: File) {
       const WordExtractor = (await import("word-extractor")).default;
       const extractor = new WordExtractor();
       const document = await extractor.extract(buffer);
-      return normalizeText(document.getBody());
+      return {
+        strategy: "word-extractor",
+        text: normalizeText(document.getBody()),
+      };
     }
 
     if (
@@ -532,16 +613,38 @@ async function extractTextFromFile(file: File) {
     ) {
       const mammoth = await import("mammoth");
       const result = await mammoth.extractRawText({ buffer });
-      return normalizeText(result.value);
+      const mammothText = normalizeText(result.value);
+
+      if (hasEnoughReadableText(mammothText)) {
+        return {
+          strategy: "mammoth",
+          text: mammothText,
+        };
+      }
+
+      const fallbackText = await extractTextFromDocxArchive(buffer);
+
+      return {
+        strategy: hasEnoughReadableText(fallbackText) ? "docx-xml-fallback" : "mammoth",
+        text: hasEnoughReadableText(fallbackText) ? fallbackText : mammothText,
+      };
     }
 
     if (mimeType === "application/rtf") {
-      return extractTextFromRtfDocument(
-        buffer.toString("utf8").replace(/^\ufeff/, ""),
-      );
+      return {
+        strategy: "rtf-parser",
+        text: extractTextFromRtfDocument(
+          buffer.toString("utf8").replace(/^\ufeff/, ""),
+        ),
+      };
     }
   } catch (error) {
-    console.error("Resume text extraction failed.", error);
+    console.error("Resume text extraction failed.", {
+      error,
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType,
+    });
     throw new Error(getUnreadableResumeMessage(file));
   }
 
@@ -555,9 +658,21 @@ export async function parseUploadedResume(file: File): Promise<{
   parsed: ResumeParserResult;
   provider: AnalysisProvider;
 }> {
-  const rawText = (await extractTextFromFile(file)).slice(0, 40000);
+  const extracted = await extractTextFromFile(file);
+  const rawText = extracted.text.slice(0, 40000);
+  const stats = getReadableTextStats(rawText);
 
-  if (rawText.length < 120) {
+  if (!hasEnoughReadableText(rawText)) {
+    console.error("Resume text extraction produced too little readable content.", {
+      alphaCount: stats.alphaCount,
+      characterCount: stats.characterCount,
+      fileName: file.name,
+      fileSize: file.size,
+      lineCount: stats.lineCount,
+      mimeType: file.type || null,
+      strategy: extracted.strategy,
+      wordCount: stats.wordCount,
+    });
     throw new Error(getInsufficientResumeTextMessage(file));
   }
 
