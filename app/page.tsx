@@ -28,6 +28,9 @@ export default async function DashboardPage() {
       description="A retrieval-first job search operating system for intake, lane routing, review, grounded scoring, and eventually asset generation. The app now covers job parsing, a multi-resume vault, fit scoring, and the manual approval gate."
       actions={
         <>
+          <Link className="button button-secondary" href="/sweep">
+            Run a Location Sweep
+          </Link>
           <Link className="button button-primary" href="/jobs/new">
             Start a New Intake
           </Link>
@@ -77,6 +80,9 @@ export default async function DashboardPage() {
                 and save a reviewable record.
               </p>
               <div className="inline-actions">
+                <Link className="button button-secondary" href="/sweep">
+                  Sweep the Market
+                </Link>
                 <Link className="button button-primary" href="/jobs/new">
                   Add the First Job
                 </Link>
@@ -123,15 +129,16 @@ export default async function DashboardPage() {
               <StatusBadge tone="accent">Typed job parser schema</StatusBadge>
               <StatusBadge tone="warning">Multi-resume upload and switching</StatusBadge>
               <StatusBadge tone="info">Retrieval-first fit scoring</StatusBadge>
+              <StatusBadge tone="accent">Location sweep and 85% thresholding</StatusBadge>
               <StatusBadge tone="success">Manual approval gate</StatusBadge>
             </div>
 
             <div className="empty-state">
               <h3>Current phase outcomes</h3>
               <p>
-                New job intake, multi-resume vault management, scoring, detail pages, environment
-                status, and local-first persistence are ready. Asset generation, CRM, and
-                analytics are the next slices.
+                New job intake, multi-resume vault management, scoring, location sweeps, detail
+                pages, environment status, and local-first persistence are ready. Asset
+                generation, CRM, and analytics are the next slices.
               </p>
             </div>
 

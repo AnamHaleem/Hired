@@ -189,6 +189,46 @@ export const JobScoreResultSchema = z.object({
   retrievedAchievements: z.array(RetrievedAchievementSchema).max(10).default([]),
 });
 
+export const LocationSweepInputSchema = z.object({
+  location: z.string().trim().min(2).max(160).optional(),
+  minScore: z.number().int().min(60).max(95).default(85),
+});
+
+export const SweptRoleMatchSchema = z.object({
+  externalId: z.string().min(1).max(160),
+  source: z.string().min(1).max(120),
+  searchQuery: z.string().min(1).max(160),
+  title: z.string().min(1).max(200),
+  company: z.string().min(1).max(200),
+  location: z.string().min(1).max(200),
+  redirectUrl: z.string().url(),
+  description: z.string().min(1).max(4000),
+  lane: CareerLaneSchema,
+  level: JobLevelSchema,
+  score: z.number().int().min(0).max(100),
+  verdict: ScoreVerdictSchema,
+  bestAngle: z.string().min(1).max(240),
+  topProofPoints: StringListSchema.default([]),
+  gaps: StringListSchema.default([]),
+  hiddenObjections: StringListSchema.default([]),
+  resumeHighlights: StringListSchema.default([]),
+  matchReasons: StringListSchema.default([]),
+  resumeRecommendations: StringListSchema.default([]),
+  salaryMin: z.number().nullable().default(null),
+  salaryMax: z.number().nullable().default(null),
+  createdAt: z.string().nullable().default(null),
+  parserProvider: ParserProviderSchema,
+  scoringProvider: AnalysisProviderSchema,
+  scoringModel: z.string().nullable().default(null),
+});
+
+export const LocationSweepResultSchema = z.object({
+  location: z.string().min(1).max(160),
+  minScore: z.number().int().min(60).max(95),
+  queries: StringListSchema,
+  matches: z.array(SweptRoleMatchSchema).max(30),
+});
+
 export const StoredJobSchema = z.object({
   id: z.string().uuid(),
   source: z.string().optional(),
@@ -217,6 +257,9 @@ export type CreateJobParseInput = z.infer<typeof CreateJobParseInputSchema>;
 export type ApproveJobInput = z.infer<typeof ApproveJobInputSchema>;
 export type ScoreJobInput = z.infer<typeof ScoreJobInputSchema>;
 export type JobScoreResult = z.infer<typeof JobScoreResultSchema>;
+export type LocationSweepInput = z.infer<typeof LocationSweepInputSchema>;
+export type SweptRoleMatch = z.infer<typeof SweptRoleMatchSchema>;
+export type LocationSweepResult = z.infer<typeof LocationSweepResultSchema>;
 export type StoredJob = z.infer<typeof StoredJobSchema>;
 export type StoredProfile = z.infer<typeof StoredProfileSchema>;
 export type UpsertProfileInput = z.infer<typeof UpsertProfileInputSchema>;

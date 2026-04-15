@@ -3,7 +3,7 @@ import Link from "next/link";
 import { runtimeFlags } from "@/lib/config";
 
 export function SetupBanner() {
-  if (runtimeFlags.hasOpenAI && runtimeFlags.hasDatabase) {
+  if (runtimeFlags.hasOpenAI && runtimeFlags.hasDatabase && runtimeFlags.hasAdzuna) {
     return null;
   }
 
@@ -16,6 +16,9 @@ export function SetupBanner() {
           : ""}
         {!runtimeFlags.hasDatabase
           ? "Railway Postgres is not configured yet, so parsed jobs are being stored locally under .data/. "
+          : ""}
+        {!runtimeFlags.hasAdzuna
+          ? "Adzuna credentials are missing, so live location sweeps are disabled until the job-search API is configured. "
           : ""}
       </p>
 

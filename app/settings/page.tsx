@@ -61,6 +61,21 @@ export default function SettingsPage() {
               ready={Boolean(env.OPENAI_PARSER_MODEL)}
               value={env.OPENAI_PARSER_MODEL}
             />
+            <EnvStatus
+              label="ADZUNA_APP_ID"
+              ready={Boolean(env.ADZUNA_APP_ID)}
+              value={env.ADZUNA_APP_ID ? "configured" : undefined}
+            />
+            <EnvStatus
+              label="ADZUNA_APP_KEY"
+              ready={Boolean(env.ADZUNA_APP_KEY)}
+              value={env.ADZUNA_APP_KEY ? "configured" : undefined}
+            />
+            <EnvStatus
+              label="ADZUNA_COUNTRY"
+              ready={Boolean(env.ADZUNA_COUNTRY)}
+              value={env.ADZUNA_COUNTRY}
+            />
             <EnvStatus label="APP_URL" ready value={env.APP_URL} />
           </div>
         </SectionCard>
@@ -94,12 +109,24 @@ export default function SettingsPage() {
               </p>
             </div>
 
+            <div className="empty-state">
+              <h3>Location sweep</h3>
+              <p>
+                {runtimeFlags.hasAdzuna
+                  ? "Adzuna is configured. The sweep route can search the saved target region, score found jobs, and recommend resume upgrades for strong matches."
+                  : "Adzuna credentials are missing, so live market sweeps are disabled until ADZUNA_APP_ID and ADZUNA_APP_KEY are added."}
+              </p>
+            </div>
+
             <div className="kpi-strip">
               <span className="code">
                 parser model: {env.OPENAI_PARSER_MODEL ?? "gpt-5.4-mini"}
               </span>
               <span className="code">
                 persistence: {runtimeFlags.hasDatabase ? "railway postgres" : "local file"}
+              </span>
+              <span className="code">
+                market sweep: {runtimeFlags.hasAdzuna ? `adzuna ${env.ADZUNA_COUNTRY}` : "disabled"}
               </span>
             </div>
           </div>

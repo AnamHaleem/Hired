@@ -214,6 +214,65 @@ function buildResumeSignals(job: StoredJob, resume: StoredResume | null) {
   };
 }
 
+function buildResumeProofPoints(job: StoredJob, resume: StoredResume | null) {
+  if (!resume) {
+    return [];
+  }
+
+  const jobPhrases = buildJobPhrases(job);
+  const titleTokens = tokenize(job.title);
+  const candidateLines = uniq([
+    ...resume.highlightBullets,
+    ...resume.summary
+      .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter(Boolean),
+  ]).slice(0, 10);
+
+  const ranked = candidateLines
+    .map((line) => {
+      const normalized = line.toLowerCase();
+      const phraseHits = jobPhrases.filter((phrase) =>
+        normalized.includes(phrase.toLowerCase()),
+      ).length;
+      const tokenHits = titleTokens.filter((token) => normalized.includes(token)).length;
+      const metricBonus = /\d|%|\$/.test(line) ? 2 : 0;
+
+      return {
+        line,
+        score: phraseHits * 3 + tokenHits * 2 + metricBonus,
+      };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score);
+
+  if (ranked.length > 0) {
+    return ranked.slice(0, 3).map((item) => item.line);
+  }
+
+  return candidateLines.slice(0, 2);
+}
+
+function buildTitleAlignment(job: StoredJob, resume: StoredResume | null) {
+  if (!resume) {
+    return 0;
+  }
+
+  const normalizedResume = buildResumeSearchText(resume).toLowerCase();
+  const titleTokens = tokenize(job.title);
+
+  if (titleTokens.length === 0) {
+    return resume.lane === job.lane ? 0.35 : 0;
+  }
+
+  const matchedTitleTokens = titleTokens.filter((token) =>
+    normalizedResume.includes(token),
+  ).length;
+  const laneBonus = resume.lane === job.lane ? 0.25 : 0;
+
+  return clamp(matchedTitleTokens / titleTokens.length + laneBonus, 0, 1);
+}
+
 function retrieveAchievements(
   job: StoredJob,
   achievements: StoredAchievement[],
@@ -266,14 +325,20 @@ function retrieveAchievements(
   return ranked.filter((item, index) => item.score > 24 || index < 3);
 }
 
-function buildGapList(job: StoredJob, retrieved: RetrievedAchievement[]) {
+function buildGapList(
+  job: StoredJob,
+  retrieved: RetrievedAchievement[],
+  resume: StoredResume | null,
+) {
   const retrievedText = retrieved
     .flatMap((item) => [item.summary, ...item.evidence, ...item.metrics, ...item.tags])
     .join(" ")
     .toLowerCase();
+  const resumeText = resume ? buildResumeSearchText(resume).toLowerCase() : "";
+  const evidenceText = `${retrievedText} ${resumeText}`;
 
   const gaps = job.analysis.mustHaves.filter((mustHave) => {
-    return !retrievedText.includes(mustHave.toLowerCase());
+    return !evidenceText.includes(mustHave.toLowerCase());
   });
 
   return gaps.slice(0, 4);
@@ -308,7 +373,10 @@ function heuristicScore(
   const proofPointCount = retrieved.filter((item) => item.score >= 30).length;
   const evidenceDepth = retrieved.reduce((count, item) => count + item.evidence.length, 0);
   const resumeSignals = buildResumeSignals(job, resume);
-  const gaps = buildGapList(job, retrieved);
+  const resumeProofPoints = buildResumeProofPoints(job, resume);
+  const titleAlignment = buildTitleAlignment(job, resume);
+  const groundedProofCount = Math.max(proofPointCount, resumeProofPoints.length);
+  const gaps = buildGapList(job, retrieved, resume);
   const objections = [...job.analysis.likelyObjections];
 
   if (!profile) {
@@ -319,8 +387,8 @@ function heuristicScore(
     objections.push("No resume has been selected for this score.");
   }
 
-  if (proofPointCount === 0) {
-    objections.push("No grounded proof points were retrieved from the achievement vault.");
+  if (groundedProofCount === 0) {
+    objections.push("The selected resume still needs stronger proof points for this role family.");
   }
 
   if (job.lane === "hybrid_review") {
@@ -328,22 +396,32 @@ function heuristicScore(
   }
 
   let score =
-    38 +
-    proofPointCount * 10 +
-    Math.round(resumeSignals.score * 0.18) +
+    34 +
+    proofPointCount * 8 +
+    Math.round(resumeSignals.score * 0.3) +
+    Math.round(titleAlignment * 14) +
+    Math.min(14, resumeProofPoints.length * 5) +
     Math.min(18, evidenceDepth * 2) -
-    gaps.length * 5 -
-    job.analysis.likelyObjections.length * 3;
+    gaps.length * 4 -
+    job.analysis.likelyObjections.length * 2;
+
+  if (proofPointCount === 0 && resumeProofPoints.length > 0) {
+    score += 8;
+  }
 
   if (!profile) {
-    score -= 6;
+    score -= 4;
   }
 
   if (job.lane === "hybrid_review") {
-    score -= 8;
+    score -= 6;
   }
 
-  score = clamp(score, 18, 94);
+  if (!resume) {
+    score = Math.min(score, 56);
+  }
+
+  score = clamp(score, 18, 96);
 
   const verdict =
     score >= 78 ? "pursue" : score >= 58 ? "maybe" : "pass";
@@ -355,7 +433,9 @@ function heuristicScore(
     topProofPoints:
       retrieved.length > 0
         ? retrieved.slice(0, 3).map((item) => item.summary)
-        : resumeSignals.highlights,
+        : resumeProofPoints.length > 0
+          ? resumeProofPoints
+          : resumeSignals.highlights,
     gaps: [
       ...gaps,
       ...(resume
@@ -376,6 +456,7 @@ export async function scoreJobFit(args: {
   profile: StoredProfile | null;
   resume: StoredResume | null;
   achievements: StoredAchievement[];
+  preferHeuristic?: boolean;
 }): Promise<{
   result: JobScoreResult;
   provider: AnalysisProvider;
@@ -384,7 +465,7 @@ export async function scoreJobFit(args: {
   const retrievedAchievements = retrieveAchievements(args.job, args.achievements);
   const client = getOpenAIClient();
 
-  if (client) {
+  if (client && !args.preferHeuristic) {
     try {
       const response = await client.responses.parse({
         model: env.OPENAI_PARSER_MODEL,

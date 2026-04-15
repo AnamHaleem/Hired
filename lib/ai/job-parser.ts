@@ -235,10 +235,13 @@ function heuristicParse(description: string): JobParserResult {
 
 export async function parseJobDescription(
   description: string,
+  options?: {
+    preferHeuristic?: boolean;
+  },
 ): Promise<{ parsed: JobParserResult; provider: ParserProvider }> {
   const client = getOpenAIClient();
 
-  if (client) {
+  if (client && !options?.preferHeuristic) {
     try {
       const response = await client.responses.parse({
         model: env.OPENAI_PARSER_MODEL,
