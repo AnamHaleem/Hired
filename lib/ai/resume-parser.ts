@@ -128,6 +128,27 @@ type CanvasModule = {
   Path2D?: typeof Path2D;
 };
 
+function getUnreadableResumeMessage(file: File) {
+  const extension = getSupportedResumeExtension(file);
+  const format = path.extname(file.name).toUpperCase().replace(".", "") || "resume";
+
+  if (extension === ".pdf") {
+    return "We couldn't extract text from that PDF. It may be scanned, image-only, or protected. Upload a text-based PDF, DOC, DOCX, or RTF resume.";
+  }
+
+  return `We couldn't read that ${format} file. Save it as a text-based ${SUPPORTED_RESUME_FORMATS_LABEL} resume and try again.`;
+}
+
+function getInsufficientResumeTextMessage(file: File) {
+  const extension = getSupportedResumeExtension(file);
+
+  if (extension === ".pdf") {
+    return "We found too little selectable text in that PDF. It may be scanned or image-only. Upload a text-based PDF, DOC, DOCX, or RTF resume.";
+  }
+
+  return "We found too little readable text in that resume. Save it as a text-based DOC, DOCX, RTF, or PDF file and try again.";
+}
+
 function normalizeText(value: string) {
   return value.replace(/\u0000/g, "").replace(/\r/g, "").trim();
 }
@@ -521,11 +542,7 @@ async function extractTextFromFile(file: File) {
     }
   } catch (error) {
     console.error("Resume text extraction failed.", error);
-    const format = path.extname(file.name).toUpperCase().replace(".", "") || "resume";
-
-    throw new Error(
-      `We couldn't read that ${format} file. Upload a text-based ${SUPPORTED_RESUME_FORMATS_LABEL} resume.`,
-    );
+    throw new Error(getUnreadableResumeMessage(file));
   }
 
   throw new Error(
@@ -541,7 +558,7 @@ export async function parseUploadedResume(file: File): Promise<{
   const rawText = (await extractTextFromFile(file)).slice(0, 40000);
 
   if (rawText.length < 120) {
-    throw new Error("The uploaded resume did not contain enough readable text to parse.");
+    throw new Error(getInsufficientResumeTextMessage(file));
   }
 
   const client = getOpenAIClient();

@@ -87,8 +87,9 @@ export function ResumeUploadForm() {
             type="file"
           />
           <p className="field-hint">
-            {SUPPORTED_RESUME_FORMATS_LABEL} files are supported. New uploads become the active
-            scoring resume automatically.
+            {SUPPORTED_RESUME_FORMATS_LABEL} files are supported. PDFs need selectable text, so
+            scanned or image-only PDFs may fail. New uploads become the active scoring resume
+            automatically.
           </p>
         </div>
       </div>
