@@ -71,6 +71,18 @@ export const CreateAchievementInputSchema = z.object({
   rawText: z.string().trim().max(4000).optional(),
 });
 
+export const ParseAchievementInputSchema = z.object({
+  company: z.string().trim().max(160).optional(),
+  roleTitle: z.string().trim().max(160).optional(),
+  lane: CareerLaneSchema.nullable().optional(),
+  industry: z.string().trim().max(120).optional(),
+  roleContext: z.string().trim().max(6000).optional(),
+});
+
+export const ParseAchievementResultSchema = z.object({
+  achievements: z.array(CreateAchievementInputSchema).min(1).max(6),
+});
+
 export const ResumeParserResultSchema = z.object({
   parsedName: z.string().nullable().default(null),
   headline: z.string().nullable().default(null),
@@ -210,6 +222,8 @@ export type StoredProfile = z.infer<typeof StoredProfileSchema>;
 export type UpsertProfileInput = z.infer<typeof UpsertProfileInputSchema>;
 export type StoredAchievement = z.infer<typeof StoredAchievementSchema>;
 export type CreateAchievementInput = z.infer<typeof CreateAchievementInputSchema>;
+export type ParseAchievementInput = z.infer<typeof ParseAchievementInputSchema>;
+export type ParseAchievementResult = z.infer<typeof ParseAchievementResultSchema>;
 export type ResumeParserResult = z.infer<typeof ResumeParserResultSchema>;
 export type StoredResume = z.infer<typeof StoredResumeSchema>;
 export type SetActiveResumeInput = z.infer<typeof SetActiveResumeInputSchema>;
