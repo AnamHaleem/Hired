@@ -199,7 +199,7 @@ export function LocationSweepForm({
               onChange={(event) => setMinScore(normalizeMinScore(event.target.value))}
             />
             <p className="field-hint">
-              Hired now weighs title alignment first and responsibility overlap second, so only tightly aligned roles should clear this bar.
+              Higher numbers keep the sweep tighter. Lowering the threshold should surface more borderline but still relevant matches.
             </p>
           </div>
         </div>

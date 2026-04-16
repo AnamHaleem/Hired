@@ -37,7 +37,6 @@ const MARKETING_SWEEP_QUERIES = [
   "partnerships manager",
   "go-to-market",
 ];
-const DEFAULT_SWEEP_MIN_SCORE = 89;
 const LISTING_SIGNAL_KEYWORDS = [
   "executive communications",
   "communications",
@@ -83,6 +82,22 @@ function uniq(items: string[]) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function interpolateThreshold(args: {
+  minScore: number;
+  floor: number;
+  ceiling: number;
+  lowValue: number;
+  highValue: number;
+}) {
+  const normalized = clamp(
+    (args.minScore - args.floor) / (args.ceiling - args.floor),
+    0,
+    1,
+  );
+
+  return Math.round(args.lowValue + (args.highValue - args.lowValue) * normalized);
 }
 
 function normalizeTitleCandidate(value: string) {
@@ -187,6 +202,7 @@ function scoreTitleLevelAlignment(resumeLevel: string, jobLevel: string) {
 function buildTitleFamilyQueries(args: {
   resume: StoredResume | null;
   profile: StoredProfile | null;
+  minScore: number;
 }) {
   const titleSource = [args.resume?.headline, args.resume?.label]
     .filter((value): value is string => Boolean(value))
@@ -204,6 +220,10 @@ function buildTitleFamilyQueries(args: {
         "senior communications manager",
         "corporate communications manager",
       );
+
+      if (args.minScore <= 75) {
+        queries.push("communications specialist", "public affairs manager");
+      }
       return;
     }
 
@@ -213,6 +233,10 @@ function buildTitleFamilyQueries(args: {
           ? "public affairs director"
           : "public affairs manager",
       );
+
+      if (args.minScore <= 75) {
+        queries.push("government relations manager");
+      }
       return;
     }
 
@@ -222,6 +246,10 @@ function buildTitleFamilyQueries(args: {
           ? "marketing director"
           : "marketing manager",
       );
+
+      if (args.minScore <= 75) {
+        queries.push("marketing specialist", "communications manager");
+      }
       return;
     }
 
@@ -231,6 +259,10 @@ function buildTitleFamilyQueries(args: {
           ? "growth marketing director"
           : "growth marketing manager",
       );
+
+      if (args.minScore <= 75) {
+        queries.push("demand generation manager", "digital marketing manager");
+      }
       return;
     }
 
@@ -240,6 +272,10 @@ function buildTitleFamilyQueries(args: {
           ? "brand director"
           : "brand manager",
       );
+
+      if (args.minScore <= 75) {
+        queries.push("brand specialist");
+      }
       return;
     }
 
@@ -249,6 +285,10 @@ function buildTitleFamilyQueries(args: {
           ? "partnerships director"
           : "partnerships manager",
       );
+
+      if (args.minScore <= 75) {
+        queries.push("alliances manager", "channel partnerships manager");
+      }
     }
   };
 
@@ -287,7 +327,11 @@ function pickLane(resume: StoredResume | null, profile: StoredProfile | null) {
   return "hybrid_review";
 }
 
-function buildSweepQueries(profile: StoredProfile | null, resume: StoredResume | null) {
+function buildSweepQueries(
+  profile: StoredProfile | null,
+  resume: StoredResume | null,
+  minScore: number,
+) {
   const directQueries = [
     resume?.headline,
     resume?.label,
@@ -300,11 +344,14 @@ function buildSweepQueries(profile: StoredProfile | null, resume: StoredResume |
           value,
         ),
     );
-  const titleFamilyQueries = buildTitleFamilyQueries({ profile, resume }).map((query) =>
-    normalizeTitleCandidate(query),
+  const titleFamilyQueries = buildTitleFamilyQueries({ profile, resume, minScore }).map(
+    (query) => normalizeTitleCandidate(query),
   );
 
-  return uniq([...directQueries, ...titleFamilyQueries]).slice(0, 4);
+  return uniq([...directQueries, ...titleFamilyQueries]).slice(
+    0,
+    minScore <= 75 ? 6 : 4,
+  );
 }
 
 function buildSearchDescription(listing: AdzunaJobListing, query: string) {
@@ -512,6 +559,53 @@ function buildStrictSweepScore(args: {
   };
 }
 
+function buildAdaptiveSweepGates(minScore: number) {
+  return {
+    titleGate: interpolateThreshold({
+      minScore,
+      floor: 60,
+      ceiling: 95,
+      lowValue: 48,
+      highValue: 72,
+    }),
+    responsibilityGate: interpolateThreshold({
+      minScore,
+      floor: 60,
+      ceiling: 95,
+      lowValue: 12,
+      highValue: 34,
+    }),
+    laneGate: interpolateThreshold({
+      minScore,
+      floor: 60,
+      ceiling: 95,
+      lowValue: 34,
+      highValue: 62,
+    }),
+  };
+}
+
+function getSweepSearchBreadth(minScore: number) {
+  if (minScore <= 70) {
+    return {
+      resultsPerPage: 16,
+      candidateLimit: 48,
+    };
+  }
+
+  if (minScore <= 75) {
+    return {
+      resultsPerPage: 12,
+      candidateLimit: 36,
+    };
+  }
+
+  return {
+    resultsPerPage: 8,
+    candidateLimit: 24,
+  };
+}
+
 function buildTransientJob(args: {
   listing: AdzunaJobListing;
   description: string;
@@ -613,13 +707,15 @@ export async function runLocationSweep(args: {
     throw new Error("Add a target region before running a location sweep.");
   }
 
-  const queries = buildSweepQueries(args.profile, args.resume);
+  const queries = buildSweepQueries(args.profile, args.resume, args.minScore);
 
   if (queries.length === 0) {
     throw new Error("Hired could not derive job queries from the active resume yet.");
   }
 
   const country = detectAdzunaCountry(location);
+  const gates = buildAdaptiveSweepGates(args.minScore);
+  const searchBreadth = getSweepSearchBreadth(args.minScore);
   const seenExternalIds = new Set<string>();
   const candidates: Array<{
     listing: AdzunaJobListing;
@@ -631,7 +727,7 @@ export async function runLocationSweep(args: {
       location,
       query,
       country,
-      resultsPerPage: 8,
+      resultsPerPage: searchBreadth.resultsPerPage,
     });
 
     for (const listing of listings) {
@@ -646,7 +742,7 @@ export async function runLocationSweep(args: {
 
   const matches = [];
 
-  for (const candidate of candidates.slice(0, 24)) {
+  for (const candidate of candidates.slice(0, searchBreadth.candidateLimit)) {
     const scored = await scoreListing({
       listing: candidate.listing,
       query: candidate.query,
@@ -661,19 +757,19 @@ export async function runLocationSweep(args: {
       retrievedAchievements: scored.result.retrievedAchievements,
     });
 
-    if (strictAlignment.titleAlignment.score < 68) {
+    if (strictAlignment.titleAlignment.score < gates.titleGate) {
       continue;
     }
 
-    if (strictAlignment.responsibilityAlignment.score < 30) {
+    if (strictAlignment.responsibilityAlignment.score < gates.responsibilityGate) {
       continue;
     }
 
-    if (strictAlignment.laneAlignment < 62) {
+    if (strictAlignment.laneAlignment < gates.laneGate) {
       continue;
     }
 
-    if (strictAlignment.strictScore < Math.max(args.minScore, DEFAULT_SWEEP_MIN_SCORE)) {
+    if (strictAlignment.strictScore < args.minScore) {
       continue;
     }
 
