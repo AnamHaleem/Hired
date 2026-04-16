@@ -8,7 +8,7 @@ Hired is an AI-assisted, human-reviewed job search operating system for structur
 - Vercel: Next.js hosting and preview deployments
 - Railway: PostgreSQL via `DATABASE_URL`
 - OpenAI: server-side parsing and later scoring/generation
-- Adzuna: live market search for location sweeps
+- Adzuna + public Greenhouse/Lever boards: multi-source market search for location sweeps
 
 ## Current implementation
 
@@ -19,7 +19,7 @@ The app now covers the Phase 1 foundation plus the core of Phase 2:
 - parser API route
 - achievement vault with single-user profile context
 - fit scoring API route with retrieval-first evidence ranking
-- location sweep route that searches a saved region and filters 85%+ matches
+- location sweep route that searches a saved region across Adzuna and public company boards, then filters matches by the selected threshold
 - job detail screen showing verdict, angle, proof points, gaps, and objections
 - manual approval gate
 - local fallback persistence when `DATABASE_URL` is missing
@@ -35,6 +35,8 @@ OPENAI_PARSER_MODEL=gpt-5.4-mini
 ADZUNA_APP_ID=
 ADZUNA_APP_KEY=
 ADZUNA_COUNTRY=ca
+GREENHOUSE_BOARD_TOKENS=
+LEVER_POSTING_SITES=
 ```
 
 ## Local development
@@ -58,7 +60,7 @@ The current migrations are compatible with standard Railway PostgreSQL. Vector s
 2. Create a PostgreSQL service in Railway.
 3. Copy Railway's `DATABASE_URL` into your local `.env.local` and into the Vercel project environment variables.
 4. Import the GitHub repository into Vercel.
-5. Add `OPENAI_API_KEY`, `DATABASE_URL`, `APP_URL`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and optionally `OPENAI_PARSER_MODEL` / `ADZUNA_COUNTRY` in Vercel.
+5. Add `OPENAI_API_KEY`, `DATABASE_URL`, `APP_URL`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, and optionally `OPENAI_PARSER_MODEL`, `ADZUNA_COUNTRY`, `GREENHOUSE_BOARD_TOKENS`, and `LEVER_POSTING_SITES` in Vercel.
 6. Run the SQL migrations against Railway Postgres with `npm run db:migrate`.
 7. Push to GitHub and let Vercel create preview and production deployments from the connected repo.
 
@@ -70,6 +72,16 @@ The current migrations are compatible with standard Railway PostgreSQL. Vector s
 - `/vault` profile and achievement management
 - `/sweep` live market sweep + resume strengthening recommendations
 - `/settings` runtime and environment view
+
+## Multi-source market search
+
+Hired now searches:
+
+- Adzuna when `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` are configured
+- curated public Greenhouse and Lever company boards by default
+- optional extra Greenhouse and Lever board tokens from `GREENHOUSE_BOARD_TOKENS` and `LEVER_POSTING_SITES`
+
+The optional public-board environment variables accept comma-separated values. You can also use `token|Company Name` to set a clearer label.
 
 ## CI
 

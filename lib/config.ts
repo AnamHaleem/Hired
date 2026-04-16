@@ -6,6 +6,8 @@ export const env = {
   ADZUNA_APP_ID: process.env.ADZUNA_APP_ID,
   ADZUNA_APP_KEY: process.env.ADZUNA_APP_KEY,
   ADZUNA_COUNTRY: process.env.ADZUNA_COUNTRY ?? "ca",
+  GREENHOUSE_BOARD_TOKENS: process.env.GREENHOUSE_BOARD_TOKENS,
+  LEVER_POSTING_SITES: process.env.LEVER_POSTING_SITES,
 } as const;
 
 export const runtimeFlags = {

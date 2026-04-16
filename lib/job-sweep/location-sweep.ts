@@ -7,10 +7,9 @@ import {
   buildResumeRecommendations,
 } from "@/lib/ai/resume-strengthener";
 import {
-  searchAdzunaJobs,
-  type AdzunaJobListing,
-  detectAdzunaCountry,
-} from "@/lib/job-search/adzuna";
+  searchInternetJobs,
+} from "@/lib/job-search";
+import { type JobSearchListing } from "@/lib/job-search/types";
 import {
   type AnalysisProvider,
   type LocationSweepResult,
@@ -354,7 +353,7 @@ function buildSweepQueries(
   );
 }
 
-function buildSearchDescription(listing: AdzunaJobListing, query: string) {
+function buildSearchDescription(listing: JobSearchListing, query: string) {
   return [
     `Title: ${listing.title}`,
     `Search query: ${query}`,
@@ -376,7 +375,7 @@ function toTitleCase(value: string) {
     .join(" ");
 }
 
-function deriveListingSignals(listing: AdzunaJobListing, query: string) {
+function deriveListingSignals(listing: JobSearchListing, query: string) {
   const text = [listing.title, listing.category, listing.description, query]
     .filter(Boolean)
     .join(" ")
@@ -607,7 +606,7 @@ function getSweepSearchBreadth(minScore: number) {
 }
 
 function buildTransientJob(args: {
-  listing: AdzunaJobListing;
+  listing: JobSearchListing;
   description: string;
   parserProvider: ParserProvider;
   parsed: Awaited<ReturnType<typeof parseJobDescription>>["parsed"];
@@ -649,7 +648,7 @@ function buildTransientJob(args: {
 }
 
 async function scoreListing(args: {
-  listing: AdzunaJobListing;
+  listing: JobSearchListing;
   query: string;
   profile: StoredProfile | null;
   resume: StoredResume;
@@ -713,32 +712,13 @@ export async function runLocationSweep(args: {
     throw new Error("Hired could not derive job queries from the active resume yet.");
   }
 
-  const country = detectAdzunaCountry(location);
   const gates = buildAdaptiveSweepGates(args.minScore);
   const searchBreadth = getSweepSearchBreadth(args.minScore);
-  const seenExternalIds = new Set<string>();
-  const candidates: Array<{
-    listing: AdzunaJobListing;
-    query: string;
-  }> = [];
-
-  for (const query of queries) {
-    const listings = await searchAdzunaJobs({
-      location,
-      query,
-      country,
-      resultsPerPage: searchBreadth.resultsPerPage,
-    });
-
-    for (const listing of listings) {
-      if (seenExternalIds.has(listing.id)) {
-        continue;
-      }
-
-      seenExternalIds.add(listing.id);
-      candidates.push({ listing, query });
-    }
-  }
+  const candidates = await searchInternetJobs({
+    location,
+    queries,
+    resultsPerPage: searchBreadth.resultsPerPage,
+  });
 
   const matches = [];
 
@@ -775,7 +755,7 @@ export async function runLocationSweep(args: {
 
     matches.push({
       externalId: candidate.listing.id,
-      source: "Adzuna",
+      source: candidate.listing.sourceLabel,
       searchQuery: candidate.query,
       title: candidate.listing.title,
       company: candidate.listing.company,

@@ -129,7 +129,7 @@ export default async function DashboardPage() {
               <StatusBadge tone="accent">Typed job parser schema</StatusBadge>
               <StatusBadge tone="warning">Multi-resume upload and switching</StatusBadge>
               <StatusBadge tone="info">Retrieval-first fit scoring</StatusBadge>
-              <StatusBadge tone="accent">Location sweep and 85% thresholding</StatusBadge>
+              <StatusBadge tone="accent">Multi-source location sweep</StatusBadge>
               <StatusBadge tone="success">Manual approval gate</StatusBadge>
             </div>
 

@@ -4,6 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import { SectionCard } from "@/components/section-card";
 import { StatusBadge } from "@/components/status-badge";
 import { env, runtimeFlags } from "@/lib/config";
+import { getMarketSourceSummary } from "@/lib/job-search";
 
 function EnvStatus({
   label,
@@ -32,6 +33,8 @@ function EnvStatus({
 }
 
 export default function SettingsPage() {
+  const marketSources = getMarketSourceSummary();
+
   return (
     <AppShell
       eyebrow="Environment"
@@ -76,6 +79,16 @@ export default function SettingsPage() {
               ready={Boolean(env.ADZUNA_COUNTRY)}
               value={env.ADZUNA_COUNTRY}
             />
+            <EnvStatus
+              label="GREENHOUSE_BOARD_TOKENS"
+              ready
+              value={`${marketSources.publicSources} public boards`}
+            />
+            <EnvStatus
+              label="LEVER_POSTING_SITES"
+              ready
+              value={marketSources.providerLabels.includes("lever") ? "enabled" : "none"}
+            />
             <EnvStatus label="APP_URL" ready value={env.APP_URL} />
           </div>
         </SectionCard>
@@ -113,8 +126,8 @@ export default function SettingsPage() {
               <h3>Location sweep</h3>
               <p>
                 {runtimeFlags.hasAdzuna
-                  ? "Adzuna is configured. The sweep route can search the saved target region, score found jobs, and recommend resume upgrades for strong matches."
-                  : "Adzuna credentials are missing, so live market sweeps are disabled until ADZUNA_APP_ID and ADZUNA_APP_KEY are added."}
+                  ? `Adzuna is configured, and Hired also searches ${marketSources.publicSources} public Greenhouse and Lever company boards through the same scoring pipeline.`
+                  : `Adzuna is missing, but Hired can still search ${marketSources.publicSources} public Greenhouse and Lever company boards as an internet-source fallback.`}
               </p>
             </div>
 
@@ -126,7 +139,7 @@ export default function SettingsPage() {
                 persistence: {runtimeFlags.hasDatabase ? "railway postgres" : "local file"}
               </span>
               <span className="code">
-                market sweep: {runtimeFlags.hasAdzuna ? `adzuna ${env.ADZUNA_COUNTRY}` : "disabled"}
+                market sweep: {runtimeFlags.hasAdzuna ? `adzuna + ${marketSources.publicSources} boards` : `${marketSources.publicSources} public boards`}
               </span>
             </div>
           </div>

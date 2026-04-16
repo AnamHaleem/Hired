@@ -1,19 +1,7 @@
 import { env } from "@/lib/config";
+import { type JobSearchListing } from "@/lib/job-search/types";
 
-export type AdzunaJobListing = {
-  id: string;
-  title: string;
-  company: string;
-  location: string;
-  description: string;
-  redirectUrl: string;
-  salaryMin: number | null;
-  salaryMax: number | null;
-  createdAt: string | null;
-  category: string | null;
-  contractType: string | null;
-  contractTime: string | null;
-};
+export type AdzunaJobListing = JobSearchListing;
 
 type AdzunaApiResponse = {
   results?: Array<{
@@ -156,7 +144,9 @@ export async function searchAdzunaJobs(args: {
 
       return [
         {
-          id: String(job.id ?? job.redirect_url),
+          id: `adzuna:${job.id ?? job.redirect_url}`,
+          provider: "adzuna",
+          sourceLabel: "Adzuna",
           title: job.title,
           company: job.company?.display_name?.trim() || "Company not detected",
           location: job.location?.display_name?.trim() || args.location,
