@@ -13,8 +13,37 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    const json = (await request.json()) as LocationSweepInput;
-    const payload = LocationSweepInputSchema.parse(json);
+    let payload: LocationSweepInput;
+
+    try {
+      const json = (await request.json()) as LocationSweepInput;
+      payload = LocationSweepInputSchema.parse(json);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const details = error.flatten();
+        const fieldErrors = details.fieldErrors as Partial<
+          Record<keyof LocationSweepInput, string[]>
+        >;
+        const fieldMessages = [
+          ...(fieldErrors.location ?? []),
+          ...(fieldErrors.minScore ?? []),
+          ...details.formErrors,
+        ].filter(Boolean);
+
+        return NextResponse.json(
+          {
+            error:
+              fieldMessages[0] ??
+              "The sweep inputs were invalid. Check the target region and fit score, then try again.",
+            details,
+          },
+          { status: 400 },
+        );
+      }
+
+      throw error;
+    }
+
     const profile = await getProfile();
     const resume = await getActiveResume();
     const achievements = await listAchievements();
@@ -29,12 +58,17 @@ export async function POST(request: Request) {
     return NextResponse.json(sweep, { status: 200 });
   } catch (error) {
     if (error instanceof ZodError) {
+      console.error("Failed to normalize location sweep result", error.flatten());
+
+      const details = error.flatten();
+
       return NextResponse.json(
         {
-          error: "Invalid sweep payload.",
-          details: error.flatten(),
+          error:
+            "The sweep results could not be normalized right now. Try again in a moment.",
+          details,
         },
-        { status: 400 },
+        { status: 500 },
       );
     }
 

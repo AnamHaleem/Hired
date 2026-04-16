@@ -79,6 +79,14 @@ function uniq<T>(items: T[]) {
   return Array.from(new Set(items));
 }
 
+function truncateText(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
 function normalizeLaneBonus(jobLane: CareerLane, achievementLane: CareerLane | null) {
   if (!achievementLane) {
     return 0;
@@ -346,22 +354,32 @@ function buildGapList(
 
 function deriveBestAngle(job: StoredJob, retrieved: RetrievedAchievement[]) {
   const lead = retrieved[0];
+  const leadSummary = lead ? truncateText(lead.summary, 90) : null;
 
   if (job.lane === "senior_communications") {
-    return lead
-      ? `Lead with executive advisory, stakeholder alignment, and the outcome in "${lead.summary}".`
-      : "Lead with executive advisory, stakeholder trust, and change communications experience.";
+    return truncateText(
+      leadSummary
+        ? `Lead with executive advisory, stakeholder alignment, and the outcome in "${leadSummary}".`
+        : "Lead with executive advisory, stakeholder trust, and change communications experience.",
+      240,
+    );
   }
 
   if (job.lane === "strategic_marketing_partnerships") {
-    return lead
-      ? `Lead with growth strategy, partnership execution, and the commercial result in "${lead.summary}".`
-      : "Lead with growth strategy, partnerships, and measurable go-to-market outcomes.";
+    return truncateText(
+      leadSummary
+        ? `Lead with growth strategy, partnership execution, and the commercial result in "${leadSummary}".`
+        : "Lead with growth strategy, partnerships, and measurable go-to-market outcomes.",
+      240,
+    );
   }
 
-  return lead
-    ? `Lead with the hybrid strength that connects communications discipline to commercial outcomes, anchored by "${lead.summary}".`
-    : "Lead with the rare mix of communications discipline and commercial strategy, but sharpen the lane before applying.";
+  return truncateText(
+    leadSummary
+      ? `Lead with the hybrid strength that connects communications discipline to commercial outcomes, anchored by "${leadSummary}".`
+      : "Lead with the rare mix of communications discipline and commercial strategy, but sharpen the lane before applying.",
+    240,
+  );
 }
 
 function heuristicScore(

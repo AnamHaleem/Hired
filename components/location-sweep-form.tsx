@@ -41,6 +41,21 @@ export function LocationSweepForm({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LocationSweepResult | null>(null);
 
+  function normalizeMinScore(value: unknown) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.min(95, Math.max(60, Math.round(value)));
+    }
+
+    if (typeof value === "string") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.min(95, Math.max(60, Math.round(parsed)));
+      }
+    }
+
+    return 85;
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsLoading(true);
@@ -54,7 +69,7 @@ export function LocationSweepForm({
         },
         body: JSON.stringify({
           location: location.trim() || undefined,
-          minScore,
+          minScore: normalizeMinScore(minScore),
         }),
       });
 
@@ -178,9 +193,10 @@ export function LocationSweepForm({
               inputMode="numeric"
               max={95}
               min={60}
+              step={1}
               type="number"
               value={minScore}
-              onChange={(event) => setMinScore(Number(event.target.value) || 85)}
+              onChange={(event) => setMinScore(normalizeMinScore(event.target.value))}
             />
             <p className="field-hint">
               Roles only appear when they score at or above this threshold against the active resume.

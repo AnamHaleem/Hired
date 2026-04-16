@@ -190,8 +190,36 @@ export const JobScoreResultSchema = z.object({
 });
 
 export const LocationSweepInputSchema = z.object({
-  location: z.string().trim().min(2).max(160).optional(),
-  minScore: z.number().int().min(60).max(95).default(85),
+  location: z.preprocess(
+    (value) => {
+      if (typeof value !== "string") {
+        return undefined;
+      }
+
+      const normalized = value.trim();
+      return normalized.length > 0 ? normalized : undefined;
+    },
+    z.string().min(2).max(160).optional(),
+  ),
+  minScore: z.preprocess(
+    (value) => {
+      if (value === null || value === undefined || value === "") {
+        return 85;
+      }
+
+      if (typeof value === "number") {
+        return Number.isFinite(value) ? value : 85;
+      }
+
+      if (typeof value === "string") {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 85;
+      }
+
+      return value;
+    },
+    z.number().int().min(60).max(95),
+  ),
 });
 
 export const SweptRoleMatchSchema = z.object({
