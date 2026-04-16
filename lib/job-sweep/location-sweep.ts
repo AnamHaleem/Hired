@@ -66,6 +66,30 @@ const TITLE_STOPWORDS = new Set([
   "lead",
   "principal",
 ]);
+const GENERIC_RESPONSIBILITY_SIGNALS = new Set([
+  "brand",
+  "campaigns",
+  "communications",
+  "content",
+  "corporate",
+  "cross-functional",
+  "executive",
+  "growth",
+  "leadership",
+  "management",
+  "marketing",
+  "media",
+  "messaging",
+  "partnerships",
+  "planning",
+  "positioning",
+  "public affairs",
+  "public relations",
+  "reputation",
+  "stakeholder",
+  "stakeholder management",
+  "strategy",
+]);
 
 type TitleFamily =
   | "communications"
@@ -218,10 +242,19 @@ function buildTitleFamilyQueries(args: {
           : "communications manager",
         "senior communications manager",
         "corporate communications manager",
+        "internal communications manager",
       );
 
       if (args.minScore <= 75) {
-        queries.push("communications specialist", "public affairs manager");
+        queries.push(
+          "communications specialist",
+          "public affairs manager",
+          "public relations manager",
+        );
+      }
+
+      if (args.minScore <= 70) {
+        queries.push("corporate affairs manager", "content and communications manager");
       }
       return;
     }
@@ -236,6 +269,10 @@ function buildTitleFamilyQueries(args: {
       if (args.minScore <= 75) {
         queries.push("government relations manager");
       }
+
+      if (args.minScore <= 70) {
+        queries.push("corporate affairs specialist");
+      }
       return;
     }
 
@@ -248,6 +285,10 @@ function buildTitleFamilyQueries(args: {
 
       if (args.minScore <= 75) {
         queries.push("marketing specialist", "communications manager");
+      }
+
+      if (args.minScore <= 70) {
+        queries.push("content marketing manager", "product marketing manager");
       }
       return;
     }
@@ -262,6 +303,10 @@ function buildTitleFamilyQueries(args: {
       if (args.minScore <= 75) {
         queries.push("demand generation manager", "digital marketing manager");
       }
+
+      if (args.minScore <= 70) {
+        queries.push("lifecycle marketing manager");
+      }
       return;
     }
 
@@ -275,6 +320,10 @@ function buildTitleFamilyQueries(args: {
       if (args.minScore <= 75) {
         queries.push("brand specialist");
       }
+
+      if (args.minScore <= 70) {
+        queries.push("brand marketing manager");
+      }
       return;
     }
 
@@ -287,6 +336,10 @@ function buildTitleFamilyQueries(args: {
 
       if (args.minScore <= 75) {
         queries.push("alliances manager", "channel partnerships manager");
+      }
+
+      if (args.minScore <= 70) {
+        queries.push("business development manager");
       }
     }
   };
@@ -349,7 +402,7 @@ function buildSweepQueries(
 
   return uniq([...directQueries, ...titleFamilyQueries]).slice(
     0,
-    minScore <= 75 ? 6 : 4,
+    minScore <= 70 ? 8 : minScore <= 75 ? 6 : 4,
   );
 }
 
@@ -404,46 +457,55 @@ function scoreTitleAlignment(job: StoredJob, resume: StoredResume) {
   const resumeTitle = [resume.headline, resume.label]
     .filter((value): value is string => Boolean(value))
     .join(" ");
+  const normalizedResumeTitle = normalizeTitleCandidate(resumeTitle).toLowerCase();
+  const normalizedJobTitle = normalizeTitleCandidate(job.title).toLowerCase();
   const resumeFamilies = detectTitleFamilies(resumeTitle);
   const jobFamilies = detectTitleFamilies(job.title);
   const resumeTokens = tokenizeTitle(resumeTitle);
   const jobTokens = tokenizeTitle(job.title);
   const sharedFamilies = resumeFamilies.filter((family) => jobFamilies.includes(family));
   const sharedTokens = jobTokens.filter((token) => resumeTokens.includes(token));
-  const familyScore =
-    sharedFamilies.length > 0
-      ? 100
+  const exactTitleMatch =
+    normalizedResumeTitle.length > 0 &&
+    normalizedJobTitle.length > 0 &&
+    normalizedResumeTitle === normalizedJobTitle;
+  const jobTokenCoverage =
+    jobTokens.length > 0 ? sharedTokens.length / jobTokens.length : 0;
+  const resumeTokenCoverage =
+    resumeTokens.length > 0 ? sharedTokens.length / resumeTokens.length : 0;
+  const familyScore = exactTitleMatch
+    ? 100
+    : sharedFamilies.length > 0
+      ? Math.round(56 + jobTokenCoverage * 24 + resumeTokenCoverage * 12)
       : familiesShareLane(resumeFamilies, jobFamilies)
-        ? 52
+        ? Math.round(28 + jobTokenCoverage * 18)
         : resumeFamilies.length === 0 || jobFamilies.length === 0
-          ? 30
-          : 0;
+          ? Math.round(18 + jobTokenCoverage * 24)
+          : Math.round(jobTokenCoverage * 22);
   const levelScore = scoreTitleLevelAlignment(
     detectTitleLevel(resumeTitle),
     detectTitleLevel(job.title),
   );
-  const tokenScore =
-    jobTokens.length > 0
-      ? Math.round((sharedTokens.length / jobTokens.length) * 100)
-      : 0;
-  const boostedFamilyScore =
-    sharedFamilies.length > 0
-      ? Math.min(
-          100,
-          88 +
-            (sharedTokens.length >= Math.max(1, Math.ceil(jobTokens.length / 2)) ? 10 : 0) +
-            (levelScore >= 72 ? 6 : levelScore >= 55 ? 4 : 0),
-        )
-      : 0;
+  const tokenScore = Math.round(jobTokenCoverage * 100);
+  const exactnessPenalty =
+    !exactTitleMatch && sharedFamilies.length > 0 && jobTokenCoverage < 0.34
+      ? 12
+      : !exactTitleMatch && familiesShareLane(resumeFamilies, jobFamilies) && jobTokenCoverage < 0.26
+        ? 8
+        : 0;
+  const score = clamp(
+    Math.round(
+      familyScore * 0.55 +
+        tokenScore * 0.2 +
+        Math.round(resumeTokenCoverage * 100) * 0.1 +
+        levelScore * 0.15,
+    ) - exactnessPenalty,
+    0,
+    100,
+  );
 
   return {
-    score:
-      sharedFamilies.length > 0
-        ? Math.max(
-            boostedFamilyScore,
-            Math.round(familyScore * 0.6 + levelScore * 0.2 + tokenScore * 0.2),
-          )
-        : Math.round(familyScore * 0.6 + levelScore * 0.2 + tokenScore * 0.2),
+    score,
     sharedFamilies,
     sharedTokens,
     resumeTitle: resumeTitle || resume.label,
@@ -451,14 +513,24 @@ function scoreTitleAlignment(job: StoredJob, resume: StoredResume) {
 }
 
 function buildResponsibilitySignals(job: StoredJob) {
-  return uniq([
+  const prioritized = uniq([
     ...job.analysis.mustHaves,
     ...job.analysis.painPoints,
     ...job.analysis.fitSignalKeywords,
   ])
     .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 8);
+    .filter(Boolean);
+  const specificSignals = prioritized.filter((signal) => {
+    const tokens = tokenizeTitle(signal);
+
+    if (tokens.length >= 2) {
+      return true;
+    }
+
+    return !GENERIC_RESPONSIBILITY_SIGNALS.has(signal.toLowerCase());
+  });
+
+  return (specificSignals.length > 0 ? specificSignals : prioritized).slice(0, 8);
 }
 
 function scoreResponsibilityAlignment(args: {
@@ -544,9 +616,9 @@ function buildStrictSweepScore(args: {
   });
   const laneAlignment = scoreLaneAlignment(args.job, args.resume);
   const weightedAlignment = Math.round(
-    titleAlignment.score * 0.75 +
-      responsibilityAlignment.score * 0.15 +
-      laneAlignment * 0.1,
+    titleAlignment.score * 0.6 +
+      responsibilityAlignment.score * 0.25 +
+      laneAlignment * 0.15,
   );
   const strictScore = Math.min(args.baseScore, weightedAlignment);
 
@@ -564,21 +636,21 @@ function buildAdaptiveSweepGates(minScore: number) {
       minScore,
       floor: 60,
       ceiling: 95,
-      lowValue: 48,
-      highValue: 72,
+      lowValue: 40,
+      highValue: 78,
     }),
     responsibilityGate: interpolateThreshold({
       minScore,
       floor: 60,
       ceiling: 95,
-      lowValue: 12,
-      highValue: 34,
+      lowValue: 8,
+      highValue: 42,
     }),
     laneGate: interpolateThreshold({
       minScore,
       floor: 60,
       ceiling: 95,
-      lowValue: 34,
+      lowValue: 20,
       highValue: 62,
     }),
   };
@@ -587,15 +659,15 @@ function buildAdaptiveSweepGates(minScore: number) {
 function getSweepSearchBreadth(minScore: number) {
   if (minScore <= 70) {
     return {
-      resultsPerPage: 16,
-      candidateLimit: 48,
+      resultsPerPage: 24,
+      candidateLimit: 72,
     };
   }
 
   if (minScore <= 75) {
     return {
-      resultsPerPage: 12,
-      candidateLimit: 36,
+      resultsPerPage: 18,
+      candidateLimit: 54,
     };
   }
 
@@ -765,7 +837,12 @@ export async function runLocationSweep(args: {
       lane: scored.transientJob.lane,
       level: scored.transientJob.level,
       score: strictAlignment.strictScore,
-      verdict: scored.result.verdict,
+      verdict:
+        strictAlignment.strictScore >= 78
+          ? "pursue"
+          : strictAlignment.strictScore >= 58
+            ? "maybe"
+            : "pass",
       bestAngle: scored.result.bestAngle,
       topProofPoints: scored.result.topProofPoints.slice(0, 3),
       gaps: scored.result.gaps.slice(0, 3),
