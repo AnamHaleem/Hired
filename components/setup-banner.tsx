@@ -21,8 +21,8 @@ export function SetupBanner() {
           ? "Railway Postgres is not configured yet, so parsed jobs are being stored locally under .data/. "
           : ""}
         {!runtimeFlags.hasAdzuna
-          ? `Adzuna credentials are missing, so Hired is currently using ${marketSources.publicSources} public Greenhouse and Lever boards for live internet sweeps. `
-          : `Hired is also searching ${marketSources.publicSources} public Greenhouse and Lever boards alongside Adzuna. `}
+          ? `Adzuna credentials are missing, so Hired is currently using ${marketSources.publicSources} public Ashby, Greenhouse, and Lever boards for live internet sweeps. `
+          : `Hired is also searching ${marketSources.publicSources} public Ashby, Greenhouse, and Lever boards alongside Adzuna. `}
       </p>
 
       <Link className="button button-secondary" href="/settings">

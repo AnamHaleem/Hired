@@ -3,10 +3,34 @@ import { type PublicJobBoardSource } from "@/lib/job-search/types";
 
 const DEFAULT_PUBLIC_JOB_BOARD_SOURCES: PublicJobBoardSource[] = [
   {
+    provider: "ashby",
+    key: "notion",
+    company: "Notion",
+    label: "Ashby • Notion",
+  },
+  {
+    provider: "ashby",
+    key: "openai",
+    company: "OpenAI",
+    label: "Ashby • OpenAI",
+  },
+  {
+    provider: "ashby",
+    key: "ramp",
+    company: "Ramp",
+    label: "Ashby • Ramp",
+  },
+  {
     provider: "greenhouse",
     key: "hellofresh",
     company: "HelloFresh",
     label: "Greenhouse • HelloFresh",
+  },
+  {
+    provider: "greenhouse",
+    key: "coursera",
+    company: "Coursera",
+    label: "Greenhouse • Coursera",
   },
   {
     provider: "lever",
@@ -44,6 +68,18 @@ const DEFAULT_PUBLIC_JOB_BOARD_SOURCES: PublicJobBoardSource[] = [
     company: "Zeno Group",
     label: "Lever • Zeno Group",
   },
+  {
+    provider: "lever",
+    key: "pointclickcare",
+    company: "PointClickCare",
+    label: "Lever • PointClickCare",
+  },
+  {
+    provider: "lever",
+    key: "wealthsimple",
+    company: "Wealthsimple",
+    label: "Lever • Wealthsimple",
+  },
 ];
 
 function titleCaseToken(value: string) {
@@ -56,7 +92,7 @@ function titleCaseToken(value: string) {
 
 function parseConfiguredSources(
   value: string | undefined,
-  provider: "greenhouse" | "lever",
+  provider: "ashby" | "greenhouse" | "lever",
 ) {
   return (value ?? "")
     .split(",")
@@ -71,13 +107,14 @@ function parseConfiguredSources(
         provider,
         key,
         company,
-        label: `${provider === "greenhouse" ? "Greenhouse" : "Lever"} • ${company}`,
+        label: `${provider === "ashby" ? "Ashby" : provider === "greenhouse" ? "Greenhouse" : "Lever"} • ${company}`,
       } satisfies PublicJobBoardSource;
     });
 }
 
 export function listPublicJobBoardSources() {
   const configured = [
+    ...parseConfiguredSources(env.ASHBY_JOB_BOARD_NAMES, "ashby"),
     ...parseConfiguredSources(env.GREENHOUSE_BOARD_TOKENS, "greenhouse"),
     ...parseConfiguredSources(env.LEVER_POSTING_SITES, "lever"),
   ];
@@ -102,6 +139,7 @@ export function getPublicJobBoardSummary() {
 
   return {
     total: sources.length,
+    ashby: sources.filter((source) => source.provider === "ashby").length,
     greenhouse: sources.filter((source) => source.provider === "greenhouse").length,
     lever: sources.filter((source) => source.provider === "lever").length,
   };

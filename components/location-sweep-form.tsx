@@ -35,8 +35,9 @@ export function LocationSweepForm({
   defaultLocation: string;
   activeResumeLabel: string | null;
 }) {
+  const defaultMinScore = "89";
   const [location, setLocation] = useState(defaultLocation);
-  const [minScore, setMinScore] = useState(89);
+  const [minScoreInput, setMinScoreInput] = useState(defaultMinScore);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LocationSweepResult | null>(null);
@@ -56,10 +57,18 @@ export function LocationSweepForm({
     return 89;
   }
 
+  function commitMinScore(value: string) {
+    const normalized = normalizeMinScore(value);
+    const nextValue = String(normalized);
+    setMinScoreInput(nextValue);
+    return normalized;
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsLoading(true);
     setError(null);
+    const minScore = commitMinScore(minScoreInput);
 
     try {
       const response = await fetch("/api/sweep", {
@@ -69,7 +78,7 @@ export function LocationSweepForm({
         },
         body: JSON.stringify({
           location: location.trim() || undefined,
-          minScore: normalizeMinScore(minScore),
+          minScore,
         }),
       });
 
@@ -195,8 +204,16 @@ export function LocationSweepForm({
               min={60}
               step={1}
               type="number"
-              value={minScore}
-              onChange={(event) => setMinScore(normalizeMinScore(event.target.value))}
+              value={minScoreInput}
+              onBlur={() => {
+                if (!minScoreInput.trim()) {
+                  setMinScoreInput(defaultMinScore);
+                  return;
+                }
+
+                commitMinScore(minScoreInput);
+              }}
+              onChange={(event) => setMinScoreInput(event.target.value)}
             />
             <p className="field-hint">
               Higher numbers keep the sweep tighter. Lowering the threshold should surface more borderline but still relevant matches.

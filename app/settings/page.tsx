@@ -80,14 +80,31 @@ export default function SettingsPage() {
               value={env.ADZUNA_COUNTRY}
             />
             <EnvStatus
+              label="ASHBY_JOB_BOARD_NAMES"
+              ready
+              value={
+                marketSources.countByProvider.ashby > 0
+                  ? `${marketSources.countByProvider.ashby} boards`
+                  : "none"
+              }
+            />
+            <EnvStatus
               label="GREENHOUSE_BOARD_TOKENS"
               ready
-              value={`${marketSources.publicSources} public boards`}
+              value={
+                marketSources.countByProvider.greenhouse > 0
+                  ? `${marketSources.countByProvider.greenhouse} boards`
+                  : "none"
+              }
             />
             <EnvStatus
               label="LEVER_POSTING_SITES"
               ready
-              value={marketSources.providerLabels.includes("lever") ? "enabled" : "none"}
+              value={
+                marketSources.countByProvider.lever > 0
+                  ? `${marketSources.countByProvider.lever} boards`
+                  : "none"
+              }
             />
             <EnvStatus label="APP_URL" ready value={env.APP_URL} />
           </div>
@@ -126,8 +143,8 @@ export default function SettingsPage() {
               <h3>Location sweep</h3>
               <p>
                 {runtimeFlags.hasAdzuna
-                  ? `Adzuna is configured, and Hired also searches ${marketSources.publicSources} public Greenhouse and Lever company boards through the same scoring pipeline.`
-                  : `Adzuna is missing, but Hired can still search ${marketSources.publicSources} public Greenhouse and Lever company boards as an internet-source fallback.`}
+                  ? `Adzuna is configured, and Hired also searches ${marketSources.publicSources} public Ashby, Greenhouse, and Lever company boards through the same scoring pipeline with duplicate cross-checking.`
+                  : `Adzuna is missing, but Hired can still search ${marketSources.publicSources} public Ashby, Greenhouse, and Lever company boards as an internet-source fallback.`}
               </p>
             </div>
 
