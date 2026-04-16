@@ -204,16 +204,16 @@ export const LocationSweepInputSchema = z.object({
   minScore: z.preprocess(
     (value) => {
       if (value === null || value === undefined || value === "") {
-        return 85;
+        return 89;
       }
 
       if (typeof value === "number") {
-        return Number.isFinite(value) ? value : 85;
+        return Number.isFinite(value) ? value : 89;
       }
 
       if (typeof value === "string") {
         const parsed = Number(value);
-        return Number.isFinite(parsed) ? parsed : 85;
+        return Number.isFinite(parsed) ? parsed : 89;
       }
 
       return value;

@@ -15,6 +15,7 @@ import {
   type AnalysisProvider,
   type LocationSweepResult,
   LocationSweepResultSchema,
+  type RetrievedAchievement,
   type ParserProvider,
   type StoredAchievement,
   type StoredJob,
@@ -36,6 +37,7 @@ const MARKETING_SWEEP_QUERIES = [
   "partnerships manager",
   "go-to-market",
 ];
+const DEFAULT_SWEEP_MIN_SCORE = 89;
 const LISTING_SIGNAL_KEYWORDS = [
   "executive communications",
   "communications",
@@ -54,17 +56,217 @@ const LISTING_SIGNAL_KEYWORDS = [
   "partnerships",
   "ecosystem",
 ];
+const TITLE_STOPWORDS = new Set([
+  "and",
+  "the",
+  "for",
+  "with",
+  "global",
+  "senior",
+  "junior",
+  "associate",
+  "lead",
+  "principal",
+]);
+
+type TitleFamily =
+  | "communications"
+  | "public_affairs"
+  | "marketing"
+  | "growth"
+  | "brand"
+  | "partnerships";
 
 function uniq(items: string[]) {
   return Array.from(new Set(items));
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function normalizeTitleCandidate(value: string) {
   return value
     .replace(/[|/,:]+/g, " ")
+    .replace(/\bcomms\b/gi, "communications")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 80);
+}
+
+function tokenizeTitle(value: string) {
+  return normalizeTitleCandidate(value)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 2 && !TITLE_STOPWORDS.has(token));
+}
+
+function detectTitleFamilies(value: string) {
+  const normalized = normalizeTitleCandidate(value).toLowerCase();
+  const families = new Set<TitleFamily>();
+
+  if (/communications|corporate communications|internal communications|media relations|executive communications|comms\b/i.test(normalized)) {
+    families.add("communications");
+  }
+
+  if (/public affairs|government relations|reputation/i.test(normalized)) {
+    families.add("public_affairs");
+  }
+
+  if (/\bmarketing\b|campaign/i.test(normalized)) {
+    families.add("marketing");
+  }
+
+  if (/growth|acquisition|performance marketing/i.test(normalized)) {
+    families.add("growth");
+  }
+
+  if (/\bbrand\b/i.test(normalized)) {
+    families.add("brand");
+  }
+
+  if (/partnership|alliances|ecosystem|channel/i.test(normalized)) {
+    families.add("partnerships");
+  }
+
+  return Array.from(families);
+}
+
+function detectTitleLevel(value: string) {
+  const normalized = value.toLowerCase();
+
+  if (/(vice president|vp\b|head of|chief|managing director)/i.test(normalized)) {
+    return "vp_plus";
+  }
+
+  if (/(senior director|sr\. director|director)/i.test(normalized)) {
+    return "director";
+  }
+
+  if (/(senior manager|sr\. manager|manager)/i.test(normalized)) {
+    return "manager";
+  }
+
+  if (/(specialist|coordinator|consultant|advisor|partner|strategist|analyst)/i.test(normalized)) {
+    return "individual";
+  }
+
+  return "unknown";
+}
+
+function scoreTitleLevelAlignment(resumeLevel: string, jobLevel: string) {
+  if (resumeLevel === "unknown" || jobLevel === "unknown") {
+    return 55;
+  }
+
+  if (resumeLevel === jobLevel) {
+    return 100;
+  }
+
+  const ladder = ["individual", "manager", "director", "vp_plus"];
+  const resumeIndex = ladder.indexOf(resumeLevel);
+  const jobIndex = ladder.indexOf(jobLevel);
+
+  if (resumeIndex === -1 || jobIndex === -1) {
+    return 45;
+  }
+
+  const distance = Math.abs(resumeIndex - jobIndex);
+
+  if (distance === 1) {
+    return 72;
+  }
+
+  if (distance === 2) {
+    return 38;
+  }
+
+  return 12;
+}
+
+function buildTitleFamilyQueries(args: {
+  resume: StoredResume | null;
+  profile: StoredProfile | null;
+}) {
+  const titleSource = [args.resume?.headline, args.resume?.label]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+  const families = detectTitleFamilies(titleSource);
+  const level = detectTitleLevel(titleSource);
+  const queries: string[] = [];
+
+  const includeFamilyQueries = (family: TitleFamily) => {
+    if (family === "communications") {
+      queries.push(
+        level === "director" || level === "vp_plus"
+          ? "communications director"
+          : "communications manager",
+        "senior communications manager",
+        "corporate communications manager",
+      );
+      return;
+    }
+
+    if (family === "public_affairs") {
+      queries.push(
+        level === "director" || level === "vp_plus"
+          ? "public affairs director"
+          : "public affairs manager",
+      );
+      return;
+    }
+
+    if (family === "marketing") {
+      queries.push(
+        level === "director" || level === "vp_plus"
+          ? "marketing director"
+          : "marketing manager",
+      );
+      return;
+    }
+
+    if (family === "growth") {
+      queries.push(
+        level === "director" || level === "vp_plus"
+          ? "growth marketing director"
+          : "growth marketing manager",
+      );
+      return;
+    }
+
+    if (family === "brand") {
+      queries.push(
+        level === "director" || level === "vp_plus"
+          ? "brand director"
+          : "brand manager",
+      );
+      return;
+    }
+
+    if (family === "partnerships") {
+      queries.push(
+        level === "director" || level === "vp_plus"
+          ? "partnerships director"
+          : "partnerships manager",
+      );
+    }
+  };
+
+  for (const family of families) {
+    includeFamilyQueries(family);
+  }
+
+  if (queries.length > 0) {
+    return uniq(queries);
+  }
+
+  const lane = pickLane(args.resume, args.profile);
+
+  return lane === "senior_communications"
+    ? COMMUNICATIONS_SWEEP_QUERIES
+    : lane === "strategic_marketing_partnerships"
+      ? MARKETING_SWEEP_QUERIES
+      : uniq([...COMMUNICATIONS_SWEEP_QUERIES.slice(0, 2), ...MARKETING_SWEEP_QUERIES.slice(0, 2)]);
 }
 
 function pickLane(resume: StoredResume | null, profile: StoredProfile | null) {
@@ -86,53 +288,23 @@ function pickLane(resume: StoredResume | null, profile: StoredProfile | null) {
 }
 
 function buildSweepQueries(profile: StoredProfile | null, resume: StoredResume | null) {
-  const lane = pickLane(resume, profile);
   const directQueries = [
     resume?.headline,
     resume?.label,
   ]
     .filter((value): value is string => Boolean(value))
     .map((value) => normalizeTitleCandidate(value))
-    .filter((value) =>
-      /(communications|comms|marketing|partnership|public affairs|growth|brand|stakeholder|corporate)/i.test(
-        value,
-      ),
+    .filter(
+      (value) =>
+        /(communications|marketing|partnership|public affairs|growth|brand|manager|director|lead|head)/i.test(
+          value,
+        ),
     );
+  const titleFamilyQueries = buildTitleFamilyQueries({ profile, resume }).map((query) =>
+    normalizeTitleCandidate(query),
+  );
 
-  const skillQueries = (resume?.coreSkills ?? [])
-    .flatMap((skill) => {
-      if (/public affairs/i.test(skill)) {
-        return ["public affairs"];
-      }
-
-      if (/communications/i.test(skill)) {
-        return ["communications manager"];
-      }
-
-      if (/growth marketing/i.test(skill)) {
-        return ["growth marketing"];
-      }
-
-      if (/partnership/i.test(skill)) {
-        return ["partnerships manager"];
-      }
-
-      if (/brand/i.test(skill)) {
-        return ["brand strategy"];
-      }
-
-      return [];
-    })
-    .map((query) => normalizeTitleCandidate(query));
-
-  const laneDefaults =
-    lane === "senior_communications"
-      ? COMMUNICATIONS_SWEEP_QUERIES
-      : lane === "strategic_marketing_partnerships"
-        ? MARKETING_SWEEP_QUERIES
-        : uniq([...COMMUNICATIONS_SWEEP_QUERIES.slice(0, 2), ...MARKETING_SWEEP_QUERIES.slice(0, 2)]);
-
-  return uniq([...directQueries, ...skillQueries, ...laneDefaults]).slice(0, 4);
+  return uniq([...directQueries, ...titleFamilyQueries]).slice(0, 4);
 }
 
 function buildSearchDescription(listing: AdzunaJobListing, query: string) {
@@ -166,6 +338,178 @@ function deriveListingSignals(listing: AdzunaJobListing, query: string) {
   return LISTING_SIGNAL_KEYWORDS.filter((keyword, index, all) => {
     return text.includes(keyword) && all.indexOf(keyword) === index;
   }).map(toTitleCase);
+}
+
+function familiesShareLane(left: TitleFamily[], right: TitleFamily[]) {
+  const communicationsFamilies = new Set<TitleFamily>(["communications", "public_affairs"]);
+  const marketingFamilies = new Set<TitleFamily>(["marketing", "growth", "brand", "partnerships"]);
+  const leftHasCommunications = left.some((family) => communicationsFamilies.has(family));
+  const leftHasMarketing = left.some((family) => marketingFamilies.has(family));
+  const rightHasCommunications = right.some((family) => communicationsFamilies.has(family));
+  const rightHasMarketing = right.some((family) => marketingFamilies.has(family));
+
+  return (
+    (leftHasCommunications && rightHasCommunications) ||
+    (leftHasMarketing && rightHasMarketing)
+  );
+}
+
+function scoreTitleAlignment(job: StoredJob, resume: StoredResume) {
+  const resumeTitle = [resume.headline, resume.label]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+  const resumeFamilies = detectTitleFamilies(resumeTitle);
+  const jobFamilies = detectTitleFamilies(job.title);
+  const resumeTokens = tokenizeTitle(resumeTitle);
+  const jobTokens = tokenizeTitle(job.title);
+  const sharedFamilies = resumeFamilies.filter((family) => jobFamilies.includes(family));
+  const sharedTokens = jobTokens.filter((token) => resumeTokens.includes(token));
+  const familyScore =
+    sharedFamilies.length > 0
+      ? 100
+      : familiesShareLane(resumeFamilies, jobFamilies)
+        ? 52
+        : resumeFamilies.length === 0 || jobFamilies.length === 0
+          ? 30
+          : 0;
+  const levelScore = scoreTitleLevelAlignment(
+    detectTitleLevel(resumeTitle),
+    detectTitleLevel(job.title),
+  );
+  const tokenScore =
+    jobTokens.length > 0
+      ? Math.round((sharedTokens.length / jobTokens.length) * 100)
+      : 0;
+  const boostedFamilyScore =
+    sharedFamilies.length > 0
+      ? Math.min(
+          100,
+          88 +
+            (sharedTokens.length >= Math.max(1, Math.ceil(jobTokens.length / 2)) ? 10 : 0) +
+            (levelScore >= 72 ? 6 : levelScore >= 55 ? 4 : 0),
+        )
+      : 0;
+
+  return {
+    score:
+      sharedFamilies.length > 0
+        ? Math.max(
+            boostedFamilyScore,
+            Math.round(familyScore * 0.6 + levelScore * 0.2 + tokenScore * 0.2),
+          )
+        : Math.round(familyScore * 0.6 + levelScore * 0.2 + tokenScore * 0.2),
+    sharedFamilies,
+    sharedTokens,
+    resumeTitle: resumeTitle || resume.label,
+  };
+}
+
+function buildResponsibilitySignals(job: StoredJob) {
+  return uniq([
+    ...job.analysis.mustHaves,
+    ...job.analysis.painPoints,
+    ...job.analysis.fitSignalKeywords,
+  ])
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function scoreResponsibilityAlignment(args: {
+  job: StoredJob;
+  resume: StoredResume;
+  retrievedAchievements: RetrievedAchievement[];
+}) {
+  const signals = buildResponsibilitySignals(args.job);
+  const corpus = [
+    args.resume.summary,
+    ...args.resume.coreSkills,
+    ...args.resume.focusAreas,
+    ...args.resume.highlightBullets,
+    args.resume.rawText,
+    ...args.retrievedAchievements.flatMap((achievement) => [
+      achievement.summary,
+      ...achievement.evidence,
+      ...achievement.metrics,
+      ...achievement.tags,
+    ]),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const matchedSignals: string[] = [];
+
+  for (const signal of signals) {
+    const normalizedSignal = signal.toLowerCase();
+    const signalTokens = tokenizeTitle(signal);
+    const matchedTokenCount = signalTokens.filter((token) =>
+      corpus.includes(token),
+    ).length;
+    const tokenCoverage =
+      signalTokens.length > 0 ? matchedTokenCount / signalTokens.length : 0;
+
+    if (corpus.includes(normalizedSignal) || tokenCoverage >= 0.55) {
+      matchedSignals.push(signal);
+    }
+  }
+
+  if (signals.length === 0) {
+    return {
+      score: 35,
+      matchedSignals,
+      totalSignals: 0,
+    };
+  }
+
+  return {
+    score: Math.round((matchedSignals.length / signals.length) * 100),
+    matchedSignals,
+    totalSignals: signals.length,
+  };
+}
+
+function scoreLaneAlignment(job: StoredJob, resume: StoredResume) {
+  if (!resume.lane) {
+    return 60;
+  }
+
+  if (resume.lane === job.lane) {
+    return 100;
+  }
+
+  if (resume.lane === "hybrid_review" || job.lane === "hybrid_review") {
+    return 62;
+  }
+
+  return 0;
+}
+
+function buildStrictSweepScore(args: {
+  job: StoredJob;
+  resume: StoredResume;
+  baseScore: number;
+  retrievedAchievements: RetrievedAchievement[];
+}) {
+  const titleAlignment = scoreTitleAlignment(args.job, args.resume);
+  const responsibilityAlignment = scoreResponsibilityAlignment({
+    job: args.job,
+    resume: args.resume,
+    retrievedAchievements: args.retrievedAchievements,
+  });
+  const laneAlignment = scoreLaneAlignment(args.job, args.resume);
+  const weightedAlignment = Math.round(
+    titleAlignment.score * 0.75 +
+      responsibilityAlignment.score * 0.15 +
+      laneAlignment * 0.1,
+  );
+  const strictScore = Math.min(args.baseScore, weightedAlignment);
+
+  return {
+    strictScore,
+    titleAlignment,
+    responsibilityAlignment,
+    laneAlignment,
+  };
 }
 
 function buildTransientJob(args: {
@@ -310,8 +654,26 @@ export async function runLocationSweep(args: {
       resume: args.resume,
       achievements: args.achievements,
     });
+    const strictAlignment = buildStrictSweepScore({
+      job: scored.transientJob,
+      resume: args.resume,
+      baseScore: scored.result.score,
+      retrievedAchievements: scored.result.retrievedAchievements,
+    });
 
-    if (scored.result.score < args.minScore) {
+    if (strictAlignment.titleAlignment.score < 68) {
+      continue;
+    }
+
+    if (strictAlignment.responsibilityAlignment.score < 30) {
+      continue;
+    }
+
+    if (strictAlignment.laneAlignment < 62) {
+      continue;
+    }
+
+    if (strictAlignment.strictScore < Math.max(args.minScore, DEFAULT_SWEEP_MIN_SCORE)) {
       continue;
     }
 
@@ -326,18 +688,29 @@ export async function runLocationSweep(args: {
       description: candidate.listing.description.slice(0, 4000),
       lane: scored.transientJob.lane,
       level: scored.transientJob.level,
-      score: scored.result.score,
+      score: strictAlignment.strictScore,
       verdict: scored.result.verdict,
       bestAngle: scored.result.bestAngle,
       topProofPoints: scored.result.topProofPoints.slice(0, 3),
       gaps: scored.result.gaps.slice(0, 3),
       hiddenObjections: scored.result.hiddenObjections.slice(0, 4),
       resumeHighlights: scored.result.resumeHighlights.slice(0, 3),
-      matchReasons: buildMatchReasons({
-        job: scored.transientJob,
-        score: scored.result,
-        resume: args.resume,
-      }),
+      matchReasons: uniq([
+        strictAlignment.titleAlignment.resumeTitle
+          ? `Title alignment is strong between "${strictAlignment.titleAlignment.resumeTitle}" and "${candidate.listing.title}".`
+          : null,
+        strictAlignment.responsibilityAlignment.matchedSignals.length > 0
+          ? `Responsibility overlap is grounded in ${strictAlignment.responsibilityAlignment.matchedSignals
+              .slice(0, 2)
+              .map((signal) => signal.toLowerCase())
+              .join(" and ")}.`
+          : null,
+        ...buildMatchReasons({
+          job: scored.transientJob,
+          score: scored.result,
+          resume: args.resume,
+        }),
+      ].filter((value): value is string => Boolean(value))).slice(0, 4),
       resumeRecommendations: buildResumeRecommendations({
         job: scored.transientJob,
         score: scored.result,

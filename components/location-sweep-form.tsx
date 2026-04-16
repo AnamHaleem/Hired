@@ -36,7 +36,7 @@ export function LocationSweepForm({
   activeResumeLabel: string | null;
 }) {
   const [location, setLocation] = useState(defaultLocation);
-  const [minScore, setMinScore] = useState(85);
+  const [minScore, setMinScore] = useState(89);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LocationSweepResult | null>(null);
@@ -53,7 +53,7 @@ export function LocationSweepForm({
       }
     }
 
-    return 85;
+    return 89;
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -199,7 +199,7 @@ export function LocationSweepForm({
               onChange={(event) => setMinScore(normalizeMinScore(event.target.value))}
             />
             <p className="field-hint">
-              Roles only appear when they score at or above this threshold against the active resume.
+              Hired now weighs title alignment first and responsibility overlap second, so only tightly aligned roles should clear this bar.
             </p>
           </div>
         </div>
