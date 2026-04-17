@@ -118,7 +118,7 @@ export async function searchAdzunaJobs(args: {
   url.searchParams.set("what", args.query);
   url.searchParams.set("where", args.location);
   url.searchParams.set("sort_by", "date");
-  url.searchParams.set("max_days_old", "21");
+  url.searchParams.set("max_days_old", "14");
   url.searchParams.set("content-type", "application/json");
 
   const response = await fetch(url, {

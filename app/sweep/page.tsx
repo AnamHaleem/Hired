@@ -20,7 +20,7 @@ export default async function SweepPage() {
     <AppShell
       eyebrow="Flow 1.5"
       title="Location Sweep"
-      description="Search the target region across Adzuna plus public company boards, score discovered roles against the active resume and vault, and only surface the opportunities that clear the chosen threshold."
+      description="Search the target region across Adzuna plus public company boards, score discovered roles against the active resume and vault, and only surface opportunities posted within the last 14 days that clear the chosen threshold."
       actions={
         <>
           <Link className="button button-secondary" href="/">
@@ -54,7 +54,7 @@ export default async function SweepPage() {
               <h3>1. Search by region and lane</h3>
               <p>
                 Hired derives title-family queries from the active resume, then sweeps the target
-                region across Adzuna and public Greenhouse and Lever company boards.
+                region across Adzuna and public Ashby, Greenhouse, and Lever company boards.
               </p>
             </div>
 

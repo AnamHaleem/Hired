@@ -44,6 +44,8 @@ const LOCATION_STOPWORDS = new Set([
   "states",
   "usa",
 ]);
+const RECENT_LISTING_WINDOW_DAYS = 14;
+const RECENT_LISTING_WINDOW_MS = RECENT_LISTING_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
 type SearchCandidate = {
   listing: JobSearchListing;
@@ -152,6 +154,25 @@ function normalizeRedirectUrl(value: string) {
   } catch {
     return value.trim().toLowerCase();
   }
+}
+
+function parseListingTimestamp(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isListingRecent(createdAt: string | null, now = Date.now()) {
+  const timestamp = parseListingTimestamp(createdAt);
+
+  if (timestamp === null) {
+    return false;
+  }
+
+  return now - timestamp <= RECENT_LISTING_WINDOW_MS;
 }
 
 function countTokenHits(query: string, listing: JobSearchListing) {
@@ -263,9 +284,8 @@ function scoreCandidateQuality(candidate: SearchCandidate) {
   const descriptionScore = Math.min(candidate.listing.description.length, 1200);
   const salaryScore =
     candidate.listing.salaryMin || candidate.listing.salaryMax ? 200 : 0;
-  const freshnessScore = candidate.listing.createdAt
-    ? new Date(candidate.listing.createdAt).getTime() / 1_000_000_000_000
-    : 0;
+  const freshnessScore =
+    (parseListingTimestamp(candidate.listing.createdAt) ?? 0) / 1_000_000_000_000;
   const queryScore = countTokenHits(candidate.query, candidate.listing).totalHits * 25;
 
   return (
@@ -383,13 +403,18 @@ export async function searchInternetJobs(args: {
   resultsPerPage?: number;
 }) {
   const candidates: SearchCandidate[] = [];
+  const now = Date.now();
   const publicSources = listPublicJobBoardSources();
   const publicSourceResults = await Promise.allSettled(
     publicSources.map((source) => fetchPublicSourceListings(source)),
   );
   const publicListings = publicSourceResults
     .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
-    .filter((listing) => matchesLocation(args.location, listing.location));
+    .filter(
+      (listing) =>
+        matchesLocation(args.location, listing.location) &&
+        isListingRecent(listing.createdAt, now),
+    );
 
   const country = detectAdzunaCountry(args.location);
   const adzunaResults = runtimeFlags.hasAdzuna
@@ -414,6 +439,10 @@ export async function searchInternetJobs(args: {
 
   for (const result of adzunaResults) {
     for (const listing of result.listings) {
+      if (!isListingRecent(listing.createdAt, now)) {
+        continue;
+      }
+
       registerCandidate(candidates, {
         listing,
         query: result.query,
@@ -434,8 +463,8 @@ export async function searchInternetJobs(args: {
 
   return candidates.sort((left, right) => {
     return (
-      new Date(right.listing.createdAt ?? 0).getTime() -
-      new Date(left.listing.createdAt ?? 0).getTime()
+      (parseListingTimestamp(right.listing.createdAt) ?? 0) -
+      (parseListingTimestamp(left.listing.createdAt) ?? 0)
     );
   });
 }

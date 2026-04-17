@@ -216,7 +216,7 @@ export function LocationSweepForm({
               onChange={(event) => setMinScoreInput(event.target.value)}
             />
             <p className="field-hint">
-              Higher numbers keep the sweep tighter. Lowering the threshold should surface more borderline but still relevant matches.
+              Higher numbers keep the sweep tighter. Lowering the threshold should surface more borderline but still relevant matches, but only from roles posted in the last 14 days.
             </p>
           </div>
         </div>
@@ -244,7 +244,7 @@ export function LocationSweepForm({
                 : `${result.matches.length} strong-fit role${result.matches.length === 1 ? "" : "s"} found`}
             </h3>
             <p>
-              Queries used: {result.queries.join(", ")}. Only roles scoring at least {result.minScore}% are shown.
+              Queries used: {result.queries.join(", ")}. Only roles scoring at least {result.minScore}% and posted within the last 14 days are shown.
             </p>
           </div>
 
