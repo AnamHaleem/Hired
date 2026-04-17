@@ -1,4 +1,9 @@
-export type JobSearchProvider = "adzuna" | "ashby" | "greenhouse" | "lever";
+export type JobSearchProvider =
+  | "adzuna"
+  | "ashby"
+  | "greenhouse"
+  | "lever"
+  | "smartrecruiters";
 
 export type JobSearchListing = {
   id: string;
@@ -18,7 +23,7 @@ export type JobSearchListing = {
 };
 
 export type PublicJobBoardSource = {
-  provider: "ashby" | "greenhouse" | "lever";
+  provider: "ashby" | "greenhouse" | "lever" | "smartrecruiters";
   key: string;
   company: string;
   label: string;

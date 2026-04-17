@@ -5,6 +5,14 @@ export const CareerLaneSchema = z.enum([
   "strategic_marketing_partnerships",
   "hybrid_review",
 ]);
+export const CompanySourceProviderSchema = z.enum([
+  "ashby",
+  "greenhouse",
+  "lever",
+  "smartrecruiters",
+  "custom",
+]);
+export const TargetCompanyStatusSchema = z.enum(["ready", "needs_review"]);
 
 export const JobLevelSchema = z.enum([
   "manager",
@@ -56,6 +64,28 @@ export const StoredAchievementSchema = z.object({
   rawText: z.string().min(1).max(4000),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+});
+
+export const StoredTargetCompanySchema = z.object({
+  id: z.string().uuid(),
+  profileId: z.string().uuid().nullable().default(null),
+  companyName: z.string().min(1).max(160),
+  careersUrl: z.string().url().nullable().default(null),
+  provider: CompanySourceProviderSchema,
+  providerKey: z.string().min(1).max(160).nullable().default(null),
+  status: TargetCompanyStatusSchema,
+  detectionNotes: z.string().nullable().default(null),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const CreateTargetCompanyInputSchema = z.object({
+  companyName: z.string().trim().min(1).max(160),
+  careersUrl: z.string().trim().max(500).optional(),
+});
+
+export const DeleteTargetCompanyInputSchema = z.object({
+  targetCompanyId: z.string().uuid(),
 });
 
 export const CreateAchievementInputSchema = z.object({
@@ -274,6 +304,8 @@ export const StoredJobSchema = z.object({
 });
 
 export type CareerLane = z.infer<typeof CareerLaneSchema>;
+export type CompanySourceProvider = z.infer<typeof CompanySourceProviderSchema>;
+export type TargetCompanyStatus = z.infer<typeof TargetCompanyStatusSchema>;
 export type JobLevel = z.infer<typeof JobLevelSchema>;
 export type JobStatus = z.infer<typeof JobStatusSchema>;
 export type ScoreVerdict = z.infer<typeof ScoreVerdictSchema>;
@@ -292,7 +324,10 @@ export type StoredJob = z.infer<typeof StoredJobSchema>;
 export type StoredProfile = z.infer<typeof StoredProfileSchema>;
 export type UpsertProfileInput = z.infer<typeof UpsertProfileInputSchema>;
 export type StoredAchievement = z.infer<typeof StoredAchievementSchema>;
+export type StoredTargetCompany = z.infer<typeof StoredTargetCompanySchema>;
 export type CreateAchievementInput = z.infer<typeof CreateAchievementInputSchema>;
+export type CreateTargetCompanyInput = z.infer<typeof CreateTargetCompanyInputSchema>;
+export type DeleteTargetCompanyInput = z.infer<typeof DeleteTargetCompanyInputSchema>;
 export type ParseAchievementInput = z.infer<typeof ParseAchievementInputSchema>;
 export type ParseAchievementResult = z.infer<typeof ParseAchievementResultSchema>;
 export type ResumeParserResult = z.infer<typeof ResumeParserResultSchema>;

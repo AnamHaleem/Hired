@@ -6,6 +6,7 @@ import {
   buildMatchReasons,
   buildResumeRecommendations,
 } from "@/lib/ai/resume-strengthener";
+import { toPublicJobBoardSource } from "@/lib/job-search/company-source-detection";
 import {
   searchInternetJobs,
 } from "@/lib/job-search";
@@ -20,6 +21,7 @@ import {
   type StoredJob,
   type StoredProfile,
   type StoredResume,
+  type StoredTargetCompany,
   StoredJobSchema,
 } from "@/lib/schemas";
 
@@ -767,6 +769,7 @@ export async function runLocationSweep(args: {
   profile: StoredProfile | null;
   resume: StoredResume | null;
   achievements: StoredAchievement[];
+  targetCompanies: StoredTargetCompany[];
 }): Promise<LocationSweepResult> {
   if (!args.resume) {
     throw new Error("Upload and activate a resume before running a location sweep.");
@@ -786,10 +789,14 @@ export async function runLocationSweep(args: {
 
   const gates = buildAdaptiveSweepGates(args.minScore);
   const searchBreadth = getSweepSearchBreadth(args.minScore);
+  const targetCompanySources = args.targetCompanies
+    .map((targetCompany) => toPublicJobBoardSource(targetCompany))
+    .filter((source): source is NonNullable<typeof source> => Boolean(source));
   const candidates = await searchInternetJobs({
     location,
     queries,
     resultsPerPage: searchBreadth.resultsPerPage,
+    extraPublicSources: targetCompanySources,
   });
 
   const matches = [];

@@ -4,6 +4,7 @@ import { fetchAshbyBoardJobs } from "@/lib/job-search/ashby";
 import { fetchGreenhouseBoardJobs } from "@/lib/job-search/greenhouse";
 import { fetchLeverSiteJobs } from "@/lib/job-search/lever";
 import { listPublicJobBoardSources } from "@/lib/job-search/public-board-registry";
+import { fetchSmartRecruitersCompanyJobs } from "@/lib/job-search/smartrecruiters";
 import { type JobSearchListing, type PublicJobBoardSource } from "@/lib/job-search/types";
 
 const SEARCH_STOPWORDS = new Set([
@@ -269,11 +270,20 @@ async function fetchPublicSourceListings(source: PublicJobBoardSource) {
     return fetchGreenhouseBoardJobs(source);
   }
 
+  if (source.provider === "smartrecruiters") {
+    return fetchSmartRecruitersCompanyJobs(source);
+  }
+
   return fetchLeverSiteJobs(source);
 }
 
 function getProviderPriority(provider: JobSearchListing["provider"]) {
-  if (provider === "ashby" || provider === "greenhouse" || provider === "lever") {
+  if (
+    provider === "ashby" ||
+    provider === "greenhouse" ||
+    provider === "lever" ||
+    provider === "smartrecruiters"
+  ) {
     return 4;
   }
 
@@ -401,10 +411,23 @@ export async function searchInternetJobs(args: {
   location: string;
   queries: string[];
   resultsPerPage?: number;
+  extraPublicSources?: PublicJobBoardSource[];
 }) {
   const candidates: SearchCandidate[] = [];
   const now = Date.now();
-  const publicSources = listPublicJobBoardSources();
+  const seenSources = new Set<string>();
+  const publicSources = [...listPublicJobBoardSources(), ...(args.extraPublicSources ?? [])].filter(
+    (source) => {
+      const key = `${source.provider}:${source.key}`.toLowerCase();
+
+      if (seenSources.has(key)) {
+        return false;
+      }
+
+      seenSources.add(key);
+      return true;
+    },
+  );
   const publicSourceResults = await Promise.allSettled(
     publicSources.map((source) => fetchPublicSourceListings(source)),
   );

@@ -3,12 +3,17 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import { getDatabasePool, isDatabaseConfigured } from "@/lib/db/server";
+import { detectTargetCompanySource } from "@/lib/job-search/company-source-detection";
 import {
   type CreateAchievementInput,
+  type CreateTargetCompanyInput,
+  type DeleteTargetCompanyInput,
   type StoredAchievement,
   StoredAchievementSchema,
   type StoredProfile,
   StoredProfileSchema,
+  type StoredTargetCompany,
+  StoredTargetCompanySchema,
   type UpsertProfileInput,
 } from "@/lib/schemas";
 
@@ -18,6 +23,7 @@ const VAULT_STORE_FILE = path.join(DATA_DIR, "vault.json");
 type VaultStore = {
   profile: StoredProfile | null;
   achievements: StoredAchievement[];
+  targetCompanies: StoredTargetCompany[];
 };
 
 type DatabaseProfileRow = {
@@ -47,9 +53,23 @@ type DatabaseAchievementRow = {
   updated_at: Date | string;
 };
 
+type DatabaseTargetCompanyRow = {
+  id: string;
+  profile_id: string | null;
+  company_name: string;
+  careers_url: string | null;
+  provider: string;
+  provider_key: string | null;
+  status: string;
+  detection_notes: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
 const EMPTY_STORE: VaultStore = {
   profile: null,
   achievements: [],
+  targetCompanies: [],
 };
 
 function normalizeTimestamp(value: Date | string | null | undefined) {
@@ -130,6 +150,28 @@ function mapAchievement(row: DatabaseAchievementRow): StoredAchievement {
   });
 }
 
+function mapTargetCompany(row: DatabaseTargetCompanyRow): StoredTargetCompany {
+  return StoredTargetCompanySchema.parse({
+    id: row.id,
+    profileId: row.profile_id,
+    companyName: row.company_name,
+    careersUrl: normalizeOptionalText(row.careers_url),
+    provider:
+      row.provider === "ashby" ||
+      row.provider === "greenhouse" ||
+      row.provider === "lever" ||
+      row.provider === "smartrecruiters" ||
+      row.provider === "custom"
+        ? row.provider
+        : "custom",
+    providerKey: normalizeOptionalText(row.provider_key),
+    status: row.status === "ready" ? "ready" : "needs_review",
+    detectionNotes: normalizeOptionalText(row.detection_notes),
+    createdAt: normalizeTimestamp(row.created_at),
+    updatedAt: normalizeTimestamp(row.updated_at),
+  });
+}
+
 async function readLocalStore() {
   try {
     const raw = await fs.readFile(VAULT_STORE_FILE, "utf8");
@@ -137,8 +179,11 @@ async function readLocalStore() {
 
     return {
       profile: parsed.profile ? StoredProfileSchema.parse(parsed.profile) : null,
-      achievements: parsed.achievements.map((achievement) =>
+      achievements: (parsed.achievements ?? []).map((achievement) =>
         StoredAchievementSchema.parse(achievement),
+      ),
+      targetCompanies: (parsed.targetCompanies ?? []).map((targetCompany) =>
+        StoredTargetCompanySchema.parse(targetCompany),
       ),
     };
   } catch (error) {
@@ -186,6 +231,13 @@ async function listAchievementsLocal() {
   );
 }
 
+async function listTargetCompaniesLocal() {
+  const store = await readLocalStore();
+  return [...store.targetCompanies].sort((left, right) =>
+    right.createdAt.localeCompare(left.createdAt),
+  );
+}
+
 async function createAchievementLocal(input: CreateAchievementInput) {
   const store = await readLocalStore();
 
@@ -214,6 +266,60 @@ async function createAchievementLocal(input: CreateAchievementInput) {
   store.achievements.unshift(achievement);
   await writeLocalStore(store);
   return achievement;
+}
+
+async function createTargetCompanyLocal(input: CreateTargetCompanyInput) {
+  const store = await readLocalStore();
+  const now = new Date().toISOString();
+  const detection = detectTargetCompanySource(input);
+  const companyName = input.companyName.trim();
+  const normalizedCareersUrl = detection.careersUrl;
+
+  const duplicate = store.targetCompanies.find((targetCompany) => {
+    return (
+      targetCompany.companyName.toLowerCase() === companyName.toLowerCase() &&
+      (targetCompany.careersUrl ?? "") === (normalizedCareersUrl ?? "")
+    );
+  });
+
+  if (duplicate) {
+    throw new Error("That target company is already saved.");
+  }
+
+  const targetCompany = StoredTargetCompanySchema.parse({
+    id: randomUUID(),
+    profileId: store.profile?.id ?? null,
+    companyName,
+    careersUrl: normalizedCareersUrl,
+    provider: detection.provider,
+    providerKey: detection.providerKey,
+    status: detection.status,
+    detectionNotes: detection.detectionNotes,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  store.targetCompanies.unshift(targetCompany);
+  await writeLocalStore(store);
+  return targetCompany;
+}
+
+async function deleteTargetCompanyLocal(input: DeleteTargetCompanyInput) {
+  const store = await readLocalStore();
+  const originalCount = store.targetCompanies.length;
+  const nextTargetCompanies = store.targetCompanies.filter(
+    (targetCompany) => targetCompany.id !== input.targetCompanyId,
+  );
+
+  if (nextTargetCompanies.length === originalCount) {
+    return false;
+  }
+
+  await writeLocalStore({
+    ...store,
+    targetCompanies: nextTargetCompanies,
+  });
+  return true;
 }
 
 async function getProfileDatabase() {
@@ -383,6 +489,99 @@ async function createAchievementDatabase(input: CreateAchievementInput) {
   return mapAchievement(result.rows[0]);
 }
 
+async function listTargetCompaniesDatabase() {
+  const pool = getDatabasePool();
+  const result = await pool.query<DatabaseTargetCompanyRow>(`
+    select
+      id,
+      profile_id,
+      company_name,
+      careers_url,
+      provider,
+      provider_key,
+      status,
+      detection_notes,
+      created_at,
+      updated_at
+    from target_companies
+    order by created_at desc
+  `);
+
+  return result.rows.map((row) => mapTargetCompany(row));
+}
+
+async function createTargetCompanyDatabase(input: CreateTargetCompanyInput) {
+  const pool = getDatabasePool();
+  const profile = await getProfileDatabase();
+  const detection = detectTargetCompanySource(input);
+  const companyName = input.companyName.trim();
+  const normalizedCareersUrl = detection.careersUrl;
+  const duplicate = await pool.query<{ id: string }>(
+    `
+      select id
+      from target_companies
+      where lower(company_name) = lower($1)
+        and coalesce(careers_url, '') = coalesce($2, '')
+      limit 1
+    `,
+    [companyName, normalizedCareersUrl],
+  );
+
+  if (duplicate.rowCount) {
+    throw new Error("That target company is already saved.");
+  }
+
+  const result = await pool.query<DatabaseTargetCompanyRow>(
+    `
+      insert into target_companies (
+        profile_id,
+        company_name,
+        careers_url,
+        provider,
+        provider_key,
+        status,
+        detection_notes
+      )
+      values ($1, $2, $3, $4, $5, $6, $7)
+      returning
+        id,
+        profile_id,
+        company_name,
+        careers_url,
+        provider,
+        provider_key,
+        status,
+        detection_notes,
+        created_at,
+        updated_at
+    `,
+    [
+      profile?.id ?? null,
+      companyName,
+      normalizedCareersUrl,
+      detection.provider,
+      detection.providerKey,
+      detection.status,
+      detection.detectionNotes,
+    ],
+  );
+
+  return mapTargetCompany(result.rows[0]);
+}
+
+async function deleteTargetCompanyDatabase(input: DeleteTargetCompanyInput) {
+  const pool = getDatabasePool();
+  const result = await pool.query(
+    `
+      delete from target_companies
+      where id = $1
+    `,
+    [input.targetCompanyId],
+  );
+
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function getProfile() {
   if (isDatabaseConfigured()) {
     return getProfileDatabase();
@@ -413,4 +612,28 @@ export async function createAchievement(input: CreateAchievementInput) {
   }
 
   return createAchievementLocal(input);
+}
+
+export async function listTargetCompanies() {
+  if (isDatabaseConfigured()) {
+    return listTargetCompaniesDatabase();
+  }
+
+  return listTargetCompaniesLocal();
+}
+
+export async function createTargetCompany(input: CreateTargetCompanyInput) {
+  if (isDatabaseConfigured()) {
+    return createTargetCompanyDatabase(input);
+  }
+
+  return createTargetCompanyLocal(input);
+}
+
+export async function deleteTargetCompany(input: DeleteTargetCompanyInput) {
+  if (isDatabaseConfigured()) {
+    return deleteTargetCompanyDatabase(input);
+  }
+
+  return deleteTargetCompanyLocal(input);
 }

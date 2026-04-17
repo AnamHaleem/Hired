@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
 import { runLocationSweep } from "@/lib/job-sweep/location-sweep";
-import { getProfile, listAchievements } from "@/lib/persistence/profile-store";
+import {
+  getProfile,
+  listAchievements,
+  listTargetCompanies,
+} from "@/lib/persistence/profile-store";
 import { getActiveResume } from "@/lib/persistence/resume-store";
 import {
   type LocationSweepInput,
@@ -44,15 +48,19 @@ export async function POST(request: Request) {
       throw error;
     }
 
-    const profile = await getProfile();
-    const resume = await getActiveResume();
-    const achievements = await listAchievements();
+    const [profile, resume, achievements, targetCompanies] = await Promise.all([
+      getProfile(),
+      getActiveResume(),
+      listAchievements(),
+      listTargetCompanies(),
+    ]);
     const sweep = await runLocationSweep({
       location: payload.location?.trim() || profile?.targetRegion || "",
       minScore: payload.minScore,
       profile,
       resume,
       achievements,
+      targetCompanies,
     });
 
     return NextResponse.json(sweep, { status: 200 });

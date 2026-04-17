@@ -4,23 +4,28 @@ import { AppShell } from "@/components/app-shell";
 import { LocationSweepForm } from "@/components/location-sweep-form";
 import { SectionCard } from "@/components/section-card";
 import { SetupBanner } from "@/components/setup-banner";
-import { getProfile, listAchievements } from "@/lib/persistence/profile-store";
+import {
+  getProfile,
+  listAchievements,
+  listTargetCompanies,
+} from "@/lib/persistence/profile-store";
 import { getActiveResume } from "@/lib/persistence/resume-store";
 
 export const dynamic = "force-dynamic";
 
 export default async function SweepPage() {
-  const [profile, activeResume, achievements] = await Promise.all([
+  const [profile, activeResume, achievements, targetCompanies] = await Promise.all([
     getProfile(),
     getActiveResume(),
     listAchievements(),
+    listTargetCompanies(),
   ]);
 
   return (
     <AppShell
       eyebrow="Flow 1.5"
       title="Location Sweep"
-      description="Search the target region across Adzuna plus public company boards, score discovered roles against the active resume and vault, and only surface opportunities posted within the last 14 days that clear the chosen threshold."
+      description="Search the target region across Adzuna, saved target companies, and public company boards, score discovered roles against the active resume and vault, and only surface opportunities posted within the last 14 days that clear the chosen threshold."
       actions={
         <>
           <Link className="button button-secondary" href="/">
@@ -54,7 +59,8 @@ export default async function SweepPage() {
               <h3>1. Search by region and lane</h3>
               <p>
                 Hired derives title-family queries from the active resume, then sweeps the target
-                region across Adzuna and public Ashby, Greenhouse, and Lever company boards.
+                region across Adzuna, saved target companies, and public Ashby, Greenhouse, Lever,
+                and SmartRecruiters company boards when supported.
               </p>
             </div>
 
@@ -78,6 +84,7 @@ export default async function SweepPage() {
               <span className="code">target region: {profile?.targetRegion ?? "missing"}</span>
               <span className="code">active resume: {activeResume?.label ?? "missing"}</span>
               <span className="code">vault achievements: {achievements.length}</span>
+              <span className="code">target companies: {targetCompanies.length}</span>
             </div>
           </div>
         </SectionCard>

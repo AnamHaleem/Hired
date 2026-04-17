@@ -7,18 +7,30 @@ import { ResumeActivateButton } from "@/components/resume-activate-button";
 import { ResumeUploadForm } from "@/components/resume-upload-form";
 import { SectionCard } from "@/components/section-card";
 import { StatusBadge } from "@/components/status-badge";
+import { TargetCompanyForm } from "@/components/target-company-form";
+import { TargetCompanyRemoveButton } from "@/components/target-company-remove-button";
+import { getCompanyProviderLabel } from "@/lib/job-search/company-source-detection";
 import { getLaneLabel } from "@/lib/utils";
-import { getProfile, listAchievements } from "@/lib/persistence/profile-store";
+import {
+  getProfile,
+  listAchievements,
+  listTargetCompanies,
+} from "@/lib/persistence/profile-store";
 import { getActiveResume, listResumes } from "@/lib/persistence/resume-store";
 
 export const dynamic = "force-dynamic";
 
+function getCompanyStatusTone(status: "ready" | "needs_review") {
+  return status === "ready" ? "success" : "warning";
+}
+
 export default async function VaultPage() {
-  const [profile, achievements, resumes, activeResume] = await Promise.all([
+  const [profile, achievements, resumes, activeResume, targetCompanies] = await Promise.all([
     getProfile(),
     listAchievements(),
     listResumes(),
     getActiveResume(),
+    listTargetCompanies(),
   ]);
 
   const communicationsAchievements = achievements.filter(
@@ -64,6 +76,13 @@ export default async function VaultPage() {
           <p className="metric-value">{communicationsAchievements}</p>
           <p className="metric-label">
             Communications-tagged proof points. Total vault records: {achievements.length}.
+          </p>
+        </SectionCard>
+
+        <SectionCard title="Target Companies">
+          <p className="metric-value">{targetCompanies.length}</p>
+          <p className="metric-label">
+            Saved company watchlist entries that can feed directly into the sweep.
           </p>
         </SectionCard>
       </div>
@@ -184,6 +203,69 @@ export default async function VaultPage() {
           description="The master summary and target region help the scorer frame opportunity selection without reaching for hidden memory."
         >
           <ProfileForm profile={profile} />
+        </SectionCard>
+      </div>
+
+      <div className="grid grid-two" style={{ marginTop: 18 }}>
+        <SectionCard
+          title="Target Company Watchlist"
+          description="Add companies you care about and, when possible, Hired will detect the underlying ATS and pull open roles directly into the sweep."
+        >
+          <TargetCompanyForm />
+        </SectionCard>
+
+        <SectionCard
+          title="Saved Target Companies"
+          description="Ready sources are folded into the sweep automatically. Needs-review entries stay saved until you add a supported careers URL."
+        >
+          {targetCompanies.length === 0 ? (
+            <div className="empty-state">
+              <h3>No target companies yet</h3>
+              <p>
+                Add companies you want to watch and Hired will try to detect a public
+                Greenhouse, Lever, Ashby, or SmartRecruiters source automatically.
+              </p>
+            </div>
+          ) : (
+            <div className="stack">
+              {targetCompanies.map((targetCompany) => (
+                <article className="entry-card" key={targetCompany.id}>
+                  <div className="entry-header">
+                    <div>
+                      <p className="list-title">{targetCompany.companyName}</p>
+                      <div className="meta-line">
+                        <span>{getCompanyProviderLabel(targetCompany.provider)}</span>
+                        {targetCompany.providerKey ? <span>• {targetCompany.providerKey}</span> : null}
+                      </div>
+                    </div>
+
+                    <div className="badge-row">
+                      <StatusBadge tone={getCompanyStatusTone(targetCompany.status)}>
+                        {targetCompany.status === "ready" ? "ready for sweep" : "needs review"}
+                      </StatusBadge>
+                    </div>
+                  </div>
+
+                  {targetCompany.careersUrl ? (
+                    <p className="entry-copy">
+                      Careers URL:{" "}
+                      <a href={targetCompany.careersUrl} rel="noreferrer" target="_blank">
+                        {targetCompany.careersUrl}
+                      </a>
+                    </p>
+                  ) : null}
+
+                  {targetCompany.detectionNotes ? (
+                    <p className="entry-copy">{targetCompany.detectionNotes}</p>
+                  ) : null}
+
+                  <div className="inline-actions">
+                    <TargetCompanyRemoveButton targetCompanyId={targetCompany.id} />
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </SectionCard>
       </div>
 

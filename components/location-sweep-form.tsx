@@ -224,7 +224,7 @@ export function LocationSweepForm({
         <div className="form-footer">
           <div className="stack" style={{ gap: 6 }}>
             <span className="muted">
-              Active resume: {activeResumeLabel ?? "none selected"}.
+              Active resume: {activeResumeLabel ?? "none selected"}. Saved target companies are included when Hired can detect a supported careers source.
             </span>
             {error ? <span className="error-text">{error}</span> : null}
           </div>
